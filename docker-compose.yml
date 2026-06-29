@@ -6,52 +6,36 @@ services:
     env_file:
       - .env
     depends_on:
-      - postgres
-      - redis
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
     volumes:
-      - ./app:/app/app
-      - ./celery_worker:/app/celery_worker
       - upload_data:/app/app/static/upload
-
-  celery_worker:
-    build: .
-    command: celery -A celery_worker.celery_app worker -l info -c 4
-    env_file:
-      - .env
-    depends_on:
-      - postgres
-      - redis
-    volumes:
-      - ./app:/app/app
-      - ./celery_worker:/app/celery_worker
-
-  celery_beat:
-    build: .
-    command: celery -A celery_worker.celery_app beat -l info
-    env_file:
-      - .env
-    depends_on:
-      - postgres
-      - redis
-    volumes:
-      - ./app:/app/app
-      - ./celery_worker:/app/celery_worker
+    restart: unless-stopped
 
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: postgres
+      POSTGRES_USER: zhangli
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: dispatching
     ports:
       - "5432:5432"
     volumes:
       - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U zhangli -d dispatching"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
 
   redis:
     image: redis:7-alpine
     ports:
       - "6379:6379"
+    restart: unless-stopped
 
 volumes:
   pg_data:
