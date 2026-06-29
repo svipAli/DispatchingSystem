@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}{{ cfg.get('site_title', settings.APP_NAME) }}{% endblock %}</title>
     {% set logo_url = cfg.get('site_logo', '') %}
-    <link rel="icon" type="image/x-icon" href="/static/favicon.ico?v=2">
-    <link rel="shortcut icon" type="image/x-icon" href="/static/favicon.ico?v=2">
+    <link rel="icon" type="image/x-icon" href="{{ logo_url or '/static/favicon.ico' }}?v=2">
+    <link rel="shortcut icon" type="image/x-icon" href="{{ logo_url or '/static/favicon.ico' }}?v=2">
     <style>
         :root {
             --primary: #4f46e5;
