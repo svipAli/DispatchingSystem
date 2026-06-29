@@ -6,39 +6,54 @@
 
 | 层面 | 选型 |
 |------|------|
-| 后端框架 | FastAPI (Python 3.11) |
+| 后端框架 | FastAPI (Python 3.11+) |
 | 数据库 | PostgreSQL + asyncpg + SQLAlchemy 2.0 async |
 | 缓存 | Redis |
-| 任务调度 | asyncio（内建异步） |
 | 认证 | JWT (python-jose) |
 | 前端 | Jinja2 + Tailwind CSS + Alpine.js |
 | 图表 | ECharts |
-| 部署 | Docker Compose |
+| 任务调度 | asyncio 内建异步 |
 
-## 部署（Docker）
+## 部署
+
+### 方式一：裸机部署（推荐生产环境）
 
 ```bash
 # 1. 克隆仓库
 git clone https://github.com/svipAli/DispatchingSystem.git
 cd DispatchingSystem
 
-# 2. 如果服务器需要代理访问 GitHub，先配置
+# 2. 如果服务器需要代理访问 GitHub
 git config --global http.proxy http://127.0.0.1:7890
 git config --global https.proxy http://127.0.0.1:7890
 
-# 3. 一键部署（首次会提示编辑 .env 修改 JWT 密钥）
-bash setup.sh
+# 3. 创建虚拟环境
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+
+# 4. 配置环境变量
+cp .env.example .env
+# 编辑 .env：修改 JWT_SECRET_KEY（openssl rand -hex 32），确认数据库和 Redis 地址
+vim .env
+
+# 5. 数据库迁移 + 创建管理员
+alembic upgrade head
+python init_admin.py
+
+# 6. 启动服务（生产用 systemd 保活）
+nohup uvicorn app.main:app --host 0.0.0.0 --port 9900 &
 ```
 
-部署完成后访问 `http://服务器IP:8000`，默认管理员 `admin` / `Admin123456`。
+访问 `http://服务器IP:9900`，默认管理员 `admin` / `Admin123456`。
 
-## 手动开发部署
+### 方式二：Docker Compose
 
-部署完成后访问 `http://localhost:8000`，管理员 `admin` / `Admin123456`。
-
-> 部署前可编辑 `.env` 修改数据库连接和 JWT 密钥。
-
-## 手动部署
+```bash
+git clone https://github.com/svipAli/DispatchingSystem.git
+cd DispatchingSystem
+bash setup.sh
+```
 
 ## 功能模块
 
@@ -54,25 +69,22 @@ bash setup.sh
 - 短任务同步返回，长任务异步轮询
 
 ### 节点与服务管理
-- MCP 节点心跳 + 配置同步
+- MCP 节点 WebSocket 心跳 + 配置同步
 - 服务参数定义与校验
 - 超时控制（平台端可配）
-- WebSocket 实时通信
 
 ### AI 运维助手
 - WebSocket 流式对话
 - Agent 模式：自动调用工具查询系统状态
-- 支持 OpenAI 兼容接口（DeepSeek / GPT）
+- 支持 OpenAI 兼容接口
 
 ### 运维监控
 - 平台 + 节点双维度监控
 - ECharts 仪表盘 + 趋势图
-- CPU、内存、磁盘、网络实时采集
 
 ### 计费系统
 - 预扣费 + 退款
 - 充值管理、流水记录
-- 余额显示、消费明细
 
 ## 项目结构
 
@@ -82,16 +94,6 @@ DispatchingSystem/
 │   ├── main.py                 # FastAPI 入口
 │   ├── core/                   # 安全、数据库、WebSocket
 │   ├── modules/                # 业务模块（14 个）
-│   │   ├── user/               # 用户
-│   │   ├── mcp_node/           # MCP 节点 + 服务
-│   │   ├── task/               # 任务调度
-│   │   ├── billing/            # 计费流水
-│   │   ├── recharge/           # 充值
-│   │   ├── api_token/          # API Token
-│   │   ├── mcp_gateway/        # MCP 网关
-│   │   ├── ai_admin/           # AI 助手
-│   │   ├── ws/                 # WebSocket
-│   │   └── ...
 │   ├── templates/              # Jinja2 页面
 │   └── static/                 # 静态文件
 ├── docs/                       # 开发文档
