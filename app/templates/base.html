@@ -91,6 +91,10 @@
                     {% endif %}
                 </div>
                 <div class="flex items-center space-x-3">
+                    <a href="#" onclick="showContact();return false" class="text-sm text-gray-500 hover:text-indigo-500 flex items-center space-x-1" title="联系客服">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 5.636l-3.536 3.536m0 5.656l3.536 3.536M9.172 9.172L5.636 5.636m3.536 9.192l-3.536 3.536M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-5 0a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+                        <span>联系客服</span>
+                    </a>
                     <span class="text-sm text-gray-500">余额：<span class="font-medium text-indigo-600">¥{{ "%.2f"|format(user.balance) }}</span></span>
                     {% if is_admin %}<span class="text-xs px-1.5 py-0.5 bg-green-100 text-green-600 rounded">管理员</span>{% else %}<span class="text-xs px-1.5 py-0.5 bg-blue-100 text-blue-600 rounded">用户</span>{% endif %}
                     <a href="/profile" class="text-sm text-gray-600 hover:text-indigo-600">{{ user.username }}</a>
@@ -121,9 +125,6 @@
     </main>
 
     {% if user %}
-    <footer class="text-center py-3 text-xs text-gray-400">
-        <a href="#" onclick="showContact();return false" class="hover:text-indigo-500">联系客服</a>
-    </footer>
     <div id="contact-modal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 hidden" onclick="if(event.target===this)this.classList.add('hidden')">
         <div class="bg-white rounded-xl p-6 w-full max-w-lg mx-4 max-h-[70vh] overflow-y-auto">
             <h3 class="text-lg font-bold mb-3">联系客服</h3>
