@@ -44,6 +44,7 @@ import app.modules.recharge.models
 import app.modules.file_record.models
 import app.modules.system_config.models
 import app.modules.ai_admin.models
+import app.modules.ai_admin.models
 
 # 从 .env 读取数据库连接 URL，不用 alembic.ini 中的硬编码值
 from app.config import settings
