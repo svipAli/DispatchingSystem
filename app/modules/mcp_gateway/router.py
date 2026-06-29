@@ -318,7 +318,7 @@ async def _call_tool(session: MCPSession, params: dict) -> dict:
         await db.commit()
 
     # 4. 根据超时决定同步还是异步
-    from celery_worker.tasks.mcp_dispatch import run_dispatch
+    from app.core.dispatch import run_dispatch
 
     if timeout <= 60:
         # 短任务：同步等待结果，直接返回

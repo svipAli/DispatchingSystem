@@ -79,7 +79,7 @@ async def submit_task(
     item = await service.submit(db, current_user.id, data)
     # 异步调度：直接用 asyncio 在同一个进程里执行，共享 WS 连接
     import asyncio
-    from celery_worker.tasks.mcp_dispatch import run_dispatch
+    from app.core.dispatch import run_dispatch
     asyncio.create_task(run_dispatch(item.id))
     return success(
         TaskOut.model_validate(item).model_dump(), message="任务已提交，排队中"

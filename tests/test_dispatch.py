@@ -5,7 +5,7 @@ Celery 调度任务单元测试
 import pytest
 from unittest.mock import AsyncMock, patch
 from httpx import AsyncClient
-from celery_worker.tasks.mcp_dispatch import run_dispatch
+from app.core.dispatch import run_dispatch
 
 
 class TestDispatchFlow:
