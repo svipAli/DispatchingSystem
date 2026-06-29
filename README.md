@@ -15,14 +15,24 @@
 | 图表 | ECharts |
 | 部署 | Docker Compose |
 
-## 快速开始
+## 部署（Docker）
 
 ```bash
-# 克隆 + 一键部署
+# 1. 克隆仓库
 git clone https://github.com/svipAli/DispatchingSystem.git
 cd DispatchingSystem
+
+# 2. 如果服务器需要代理访问 GitHub，先配置
+git config --global http.proxy http://127.0.0.1:7890
+git config --global https.proxy http://127.0.0.1:7890
+
+# 3. 一键部署（首次会提示编辑 .env 修改 JWT 密钥）
 bash setup.sh
 ```
+
+部署完成后访问 `http://服务器IP:8000`，默认管理员 `admin` / `Admin123456`。
+
+## 手动开发部署
 
 部署完成后访问 `http://localhost:8000`，管理员 `admin` / `Admin123456`。
 
