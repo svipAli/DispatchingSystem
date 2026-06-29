@@ -183,8 +183,15 @@ App.get('/api/v1/system-configs?page_size=100').then(function(data) {
                 var el = document.getElementById(inputId);
                 if (el) el.value = c.value;
             }
-            if (c.key === 'contact_service' && contactQuill) {
-                contactQuill.root.innerHTML = c.value || '';
+            if (c.key === 'contact_service' && c.value) {
+                var setContact = function() {
+                    if (contactQuill) {
+                        contactQuill.root.innerHTML = c.value;
+                    } else {
+                        setTimeout(setContact, 100);
+                    }
+                };
+                setContact();
             }
         });
         previewLogo();
