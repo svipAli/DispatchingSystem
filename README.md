@@ -9,7 +9,7 @@
 | 后端框架 | FastAPI (Python 3.11) |
 | 数据库 | PostgreSQL + asyncpg + SQLAlchemy 2.0 async |
 | 缓存 | Redis |
-| 任务队列 | Celery |
+| 任务调度 | asyncio（内建异步） |
 | 认证 | JWT (python-jose) |
 | 前端 | Jinja2 + Tailwind CSS + Alpine.js |
 | 图表 | ECharts |
