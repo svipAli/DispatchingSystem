@@ -9,7 +9,6 @@ if ! command -v docker &>/dev/null; then
     exit 1
 fi
 
-# 检测 Compose 版本
 if docker compose version &>/dev/null; then
     COMPOSE="docker compose"
 elif command -v docker-compose &>/dev/null; then
@@ -22,7 +21,13 @@ fi
 # 创建 .env
 if [ ! -f .env ]; then
     cp .env.example .env
-    echo "已创建 .env，请编辑修改 JWT_SECRET_KEY"
+    echo ""
+    echo ">>> .env 已创建，请先编辑修改以下配置："
+    echo "    JWT_SECRET_KEY   — 随机字符串（必改）"
+    echo "    DATABASE_URL     — 数据库连接"
+    echo "    REDIS_URL        — Redis 地址"
+    echo ""
+    read -p "编辑完成后按 Enter 继续部署，Ctrl+C 取消..." _
 fi
 
 mkdir -p app/static/upload
