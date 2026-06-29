@@ -20,7 +20,7 @@ var currentPage = 1;
 var userNames = {};
 
 // 加载用户名映射（非阻塞，失败了也不影响任务加载）
-App.get('/api/v1/users?page_size=200').then(function(d) {
+App.get('/api/v1/users?page_size=100').then(function(d) {
     if (d.data && d.data.items) d.data.items.forEach(function(u) { userNames[u.id] = u.username; });
 }).catch(function(){});
 
