@@ -402,7 +402,7 @@ def _tool_error(message: str, **extra) -> dict:
     return {
         "content": [{
             "type": "text",
-            "text": _json_dumps(data, ensure_ascii=False),
+            "text": _json_dumps(data),
         }],
     }
 
@@ -411,6 +411,6 @@ def _tool_success(data: dict) -> dict:
     return {
         "content": [{
             "type": "text",
-            "text": _json_dumps({"code": 0, "message": "success", **data}, ensure_ascii=False),
+            "text": _json_dumps({"code": 0, "message": "success", **data}),
         }],
     }
