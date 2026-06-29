@@ -36,5 +36,5 @@ $COMPOSE up -d --build
 
 echo ""
 echo "=== 部署完成 ==="
-echo "访问: http://localhost:8000"
+echo "访问: http://服务器IP:9900"
 echo "管理员: admin / Admin123456"
