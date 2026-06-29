@@ -1,0 +1,149 @@
+{% extends "base.html" %}
+{% block title %}运维监控 - {{ settings.APP_NAME }}{% endblock %}
+{% block head_extra %}
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+{% endblock %}
+{% block content %}
+<h1 class="text-2xl font-bold mb-4">运维监控</h1>
+
+<div class="bg-white rounded-xl shadow-sm border p-6 mb-4">
+    <h2 class="text-lg font-semibold mb-4">主控平台</h2>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div class="flex flex-col items-center">
+            <div id="plat-cpu" style="width:240px;height:200px"></div>
+            <p class="text-sm text-gray-500 font-medium">CPU 使用率</p>
+        </div>
+        <div class="flex flex-col items-center">
+            <div id="plat-mem" style="width:240px;height:200px"></div>
+            <p class="text-sm text-gray-500 font-medium">内存使用率</p>
+        </div>
+        <div class="flex flex-col items-center">
+            <div id="plat-disk" style="width:240px;height:200px"></div>
+            <p class="text-sm text-gray-500 font-medium">磁盘使用率</p>
+        </div>
+    </div>
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mt-4 text-center text-sm">
+        <div class="bg-gray-50 rounded-lg p-3">
+            <span class="text-gray-400">进程内存</span>
+            <span class="font-bold ml-2" id="p-rss">--</span>
+        </div>
+        <div class="bg-gray-50 rounded-lg p-3">
+            <span class="text-gray-400">运行时长</span>
+            <span class="font-bold ml-2" id="p-uptime">--</span>
+        </div>
+        <div class="bg-gray-50 rounded-lg p-3">
+            <span class="text-gray-400">系统负载</span>
+            <span class="font-bold ml-2" id="p-load">--</span>
+        </div>
+        <div class="bg-gray-50 rounded-lg p-3">
+            <span class="text-gray-400">网络 ↓↑</span>
+            <span class="font-bold ml-2" id="p-net">--</span>
+        </div>
+    </div>
+</div>
+
+<div class="bg-white rounded-xl shadow-sm border p-6 mb-4">
+    <h2 class="text-lg font-semibold mb-3">历史趋势</h2>
+    <div id="plat-trend" style="height:220px"></div>
+</div>
+
+<h2 class="text-lg font-semibold mb-3 mt-6">MCP 节点</h2>
+<div id="monitor-grid" class="grid grid-cols-1 gap-4">
+    <div class="text-center text-gray-400 py-8">加载中...</div>
+</div>
+
+<script>
+var charts = {};
+function initChart(id) { var el = document.getElementById(id); if (!el) return null; if (charts[id]) charts[id].dispose(); var c = echarts.init(el); charts[id] = c; return c; }
+function fmtSize(v) { if (!v&&v!==0) return '--'; return v<1073741824?(v/1073741824).toFixed(1)+'GB':(v/1073741824).toFixed(1)+'GB'; }
+function fmtSpeed(v) { if (!v&&v!==0) return '--'; return v<1024?v+'B/s':v<1048576?(v/1024).toFixed(1)+'KB/s':(v/1048576).toFixed(1)+'MB/s'; }
+function fmtUptime(v) { if (!v) return '--'; var d=Math.floor(v/86400),h=Math.floor((v%86400)/3600); return d>0?d+'天'+h+'时':h+'小时'; }
+function gaugeOpt(name, value, color) {
+    return {
+        series: [{type:'gauge',radius:'85%',center:['50%','58%'],startAngle:220,endAngle:-40,min:0,max:100,
+            axisLine:{lineStyle:{width:18,color:[[0.35,color],[0.75,'#f59e0b'],[1,'#ef4444']]}},
+            axisTick:{show:false},splitLine:{show:false},axisLabel:{show:false},
+            pointer:{length:'70%',width:6,itemStyle:{color:'#374151'}},
+            title:{offsetCenter:[0,'82%'],fontSize:13,color:'#6b7280'},
+            detail:{offsetCenter:[0,'45%'],fontSize:28,fontWeight:'bold',color:color,formatter:'{value}%'},
+            data:[{value:value||0,name:name}]}]
+    };
+}
+
+function loadPlatform() {
+    App.get('/api/v1/monitor/platform').then(function(d) {
+        if (d.code!==0) return;
+        var p = d.data.latest, h = d.data.history||[];
+        document.getElementById('p-rss').textContent = fmtSize(p.process_memory);
+        document.getElementById('p-uptime').textContent = fmtUptime(p.uptime);
+        document.getElementById('p-net').textContent = '↓'+fmtSpeed(p.network_rx_speed)+' ↑'+fmtSpeed(p.network_tx_speed);
+        document.getElementById('p-load').textContent = p.load_avg || '--';
+
+        var cpu = initChart('plat-cpu'); if (cpu) cpu.setOption(gaugeOpt('CPU', p.cpu, '#6366f1'));
+        var mem = initChart('plat-mem'); if (mem) mem.setOption(gaugeOpt('内存', p.memory_percent, '#22c55e'));
+        var disk = initChart('plat-disk'); if (disk) disk.setOption(gaugeOpt('磁盘', p.disk_percent, '#f59e0b'));
+
+        var times=[], cpuData=[], memData=[], diskData=[];
+        h.slice().reverse().forEach(function(p) {
+            var t = new Date(p._time).toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'});
+            times.push(t); cpuData.push(p.cpu||0); memData.push(p.memory_percent||0); diskData.push(p.disk_percent||0);
+        });
+        var trend = initChart('plat-trend');
+        if (trend && times.length) trend.setOption({
+            tooltip:{trigger:'axis'},legend:{bottom:0,data:['CPU','内存','磁盘'],textStyle:{fontSize:11}},
+            grid:{top:8,right:12,bottom:32,left:40},
+            xAxis:{type:'category',data:times,axisLabel:{fontSize:9,interval:Math.max(1,Math.floor(times.length/8))}},
+            yAxis:{type:'value',max:100,axisLabel:{fontSize:10,formatter:'{value}%'}},
+            series:[
+                {name:'CPU',type:'line',data:cpuData,smooth:true,symbol:'none',lineStyle:{color:'#6366f1',width:2},areaStyle:{color:new echarts.graphic.LinearGradient(0,0,0,1,[{offset:0,color:'rgba(99,102,241,0.2)'},{offset:1,color:'rgba(99,102,241,0)'}])}},
+                {name:'内存',type:'line',data:memData,smooth:true,symbol:'none',lineStyle:{color:'#22c55e',width:2},areaStyle:{color:new echarts.graphic.LinearGradient(0,0,0,1,[{offset:0,color:'rgba(34,197,94,0.2)'},{offset:1,color:'rgba(34,197,94,0)'}])}},
+                {name:'磁盘',type:'line',data:diskData,smooth:true,symbol:'none',lineStyle:{color:'#f59e0b',width:2},areaStyle:{color:new echarts.graphic.LinearGradient(0,0,0,1,[{offset:0,color:'rgba(245,158,11,0.15)'},{offset:1,color:'rgba(245,158,11,0)'}])}},
+            ]
+        });
+    });
+}
+
+function loadNodes() {
+    App.get('/api/v1/monitor').then(function(d) {
+        if (d.code!==0) return;
+        var nodes = d.data.nodes;
+        var html = '';
+        nodes.forEach(function(n) {
+            var m = n.latest||{}, sc = n.status==='online'?'text-green-500':'text-red-500';
+            html += '<div class="bg-white rounded-lg shadow-sm border p-4">'+
+                '<div class="flex justify-between items-center mb-2"><span class="font-semibold">'+n.name+'</span><span class="text-xs text-gray-400">'+n.host+' · ID:'+n.id+'</span><span class="text-sm '+sc+'">● '+(n.status==='online'?'在线':'离线')+'</span></div>'+
+                '<div class="grid grid-cols-5 gap-2 text-center text-xs">'+
+                '<div class="bg-gray-50 rounded p-2">CPU<div class="font-bold text-indigo-500">'+(m.cpu||'?')+'%</div></div>'+
+                '<div class="bg-gray-50 rounded p-2">内存<div class="font-bold text-green-500">'+(m.memory_percent||'?')+'%</div></div>'+
+                '<div class="bg-gray-50 rounded p-2">磁盘<div class="font-bold text-yellow-500">'+(m.disk_percent||'?')+'%</div></div>'+
+                '<div class="bg-gray-50 rounded p-2">网络↓<div class="font-bold">'+fmtSpeed(m.network_rx_speed)+'</div></div>'+
+                '<div class="bg-gray-50 rounded p-2">网络↑<div class="font-bold">'+fmtSpeed(m.network_tx_speed)+'</div></div>'+
+                '</div>'+
+                '<div class="text-xs text-gray-400 mt-1">运行 '+fmtUptime(m.uptime)+' · 负载 '+(m.load_avg||'?')+' · 磁盘 '+fmtSize(m.disk_used)+'/'+fmtSize(m.disk_total)+'</div>'+
+                (n.history&&n.history.length?'<div id="node-'+n.id+'" style="height:100px;margin-top:8px"></div>':'')+
+                '</div>';
+        });
+        document.getElementById('monitor-grid').innerHTML = html||'<div class="text-center text-gray-400 py-8">暂无节点</div>';
+        nodes.forEach(function(n) {
+            if (!n.history||!n.history.length) return;
+            var times=[], cpu=[], mem=[];
+            n.history.slice().reverse().forEach(function(p) { times.push(new Date(p._time).toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'})); cpu.push(p.cpu||0); mem.push(p.memory_percent||0); });
+            var c = initChart('node-'+n.id);
+            if (c) c.setOption({
+                tooltip:{trigger:'axis'},legend:{bottom:0,data:['CPU','内存'],textStyle:{fontSize:9}},
+                grid:{top:4,right:8,bottom:20,left:36},
+                xAxis:{type:'category',data:times,axisLabel:{fontSize:7,interval:Math.max(1,Math.floor(times.length/6))}},
+                yAxis:{type:'value',max:100,axisLabel:{fontSize:8}},
+                series:[
+                    {name:'CPU',type:'line',data:cpu,smooth:true,symbol:'none',lineStyle:{color:'#6366f1',width:1.5}},
+                    {name:'内存',type:'line',data:mem,smooth:true,symbol:'none',lineStyle:{color:'#22c55e',width:1.5}}
+                ]
+            });
+        });
+    });
+}
+
+loadPlatform(); loadNodes();
+setInterval(function(){ loadPlatform(); loadNodes(); }, 10000);
+</script>
+{% endblock %}

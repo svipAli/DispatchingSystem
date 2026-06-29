@@ -1,0 +1,156 @@
+{% extends "base.html" %}
+{% block title %}我的任务 - {{ settings.APP_NAME }}{% endblock %}
+{% block content %}
+<div class="flex justify-between items-center mb-6">
+    <h1 class="text-2xl font-bold">我的任务</h1>
+    <button onclick="openTaskModal()" class="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-indigo-700">提交新任务</button>
+</div>
+<div class="flex flex-wrap items-center gap-2 mb-4">
+    <button onclick="loadTasks('')" class="px-3 py-1 text-sm rounded-full bg-gray-200 hover:bg-gray-300">全部</button>
+    <button onclick="loadTasks('queued')" class="px-3 py-1 text-sm rounded-full bg-yellow-100 text-yellow-700 hover:bg-yellow-200">排队中</button>
+    <button onclick="loadTasks('running')" class="px-3 py-1 text-sm rounded-full bg-blue-100 text-blue-700 hover:bg-blue-200">执行中</button>
+    <button onclick="loadTasks('completed')" class="px-3 py-1 text-sm rounded-full bg-green-100 text-green-700 hover:bg-green-200">已完成</button>
+    <button onclick="loadTasks('failed')" class="px-3 py-1 text-sm rounded-full bg-red-100 text-red-700 hover:bg-red-200">失败</button>
+    <input type="text" id="search-input" placeholder="搜索任务ID或服务类型..." class="px-3 py-2 border rounded-lg text-sm w-48 ml-2" onkeyup="if(event.key==='Enter')loadTasks()">
+    <button onclick="loadTasks()" class="px-3 py-2 bg-gray-100 text-gray-600 rounded-lg text-sm hover:bg-gray-200">搜索</button>
+</div>
+<div id="task-list" class="space-y-4"><div class="text-center text-gray-400 py-12">加载中...</div></div>
+<div id="pagination" class="mt-4"></div>
+<script>
+var statusMap = {queued: '排队中', running: '执行中', completed: '已完成', failed: '失败', cancelled: '已取消'};
+var statusColor = {queued: 'bg-yellow-100 text-yellow-700', running: 'bg-blue-100 text-blue-700', completed: 'bg-green-100 text-green-700', failed: 'bg-red-100 text-red-700', cancelled: 'bg-gray-100 text-gray-500'};
+var currentPage = 1, currentStatus = '';
+
+function renderTasks(data) {
+    var el = document.getElementById('task-list');
+    if (!data.data || !data.data.items.length) { el.innerHTML = '<div class="text-center text-gray-400 py-12">暂无任务</div>'; document.getElementById('pagination').innerHTML = ''; return; }
+    var html = '';
+    data.data.items.forEach(function(t) {
+        var svcName = '';
+        var svcs = servicesData[t.service_type];
+        if (svcs && svcs.length) svcName = svcs[0].service_name;
+        var nodeName = nodeNames[t.node_id] || '';
+        var nodeInfo = t.node_id ? ('【' + t.node_id + '】' + (nodeName || '')) : '';
+
+        html += '<div class="bg-white rounded-lg shadow-sm p-4 border"><div class="flex justify-between"><div>' +
+            '<span class="text-xs text-gray-400 mr-2">#' + t.id + '</span>' +
+            '<span class="text-sm font-medium">' + (svcName || t.service_type) + '</span>' +
+            '<span class="text-xs text-gray-400 ml-1">' + (svcName ? t.service_type : '') + '</span>' +
+            '<span class="ml-2 px-2 py-0.5 text-xs rounded-full ' + (statusColor[t.status]||'bg-gray-100') + '">' + (statusMap[t.status]||t.status) + '</span>' +
+            '</div><span class="text-sm text-gray-500">¥' + t.cost.toFixed(2) + '</span></div>' +
+            (nodeInfo ? '<div class="text-xs text-gray-400 mt-1">节点：' + nodeInfo + '</div>' : '') +
+            '<div class="text-xs text-gray-400 mt-1">' + new Date(t.created_at).toLocaleString() + '</div>' +
+            (t.result || t.error_message ? '<details class="mt-2"><summary class="text-xs cursor-pointer ' + (t.status==='completed'?'text-indigo-600':'text-red-500') + '">查看结果</summary><pre class="text-xs bg-gray-50 p-2 rounded mt-1 overflow-x-auto ' + (t.status==='failed'?'text-red-500':'') + '">' + JSON.stringify(t.result || {error: t.error_message}, null, 2) + '</pre></details>' : '') +
+            '</div>';
+    });
+    el.innerHTML = html;
+    var tp = Math.ceil(data.data.total / data.data.page_size);
+    var pg = '<div class="flex items-center space-x-1 text-sm"><span class="text-gray-500 mr-2">共 ' + data.data.total + ' 条</span>';
+    for (var i = 1; i <= tp; i++) pg += '<button onclick="loadTasks(\'' + currentStatus + '\',' + i + ')" class="px-3 py-1 rounded ' + (i===currentPage?'bg-indigo-600 text-white':'bg-gray-200') + '">' + i + '</button>';
+    pg += '</div>';
+    document.getElementById('pagination').innerHTML = pg;
+}
+
+function loadTasks(status, page) {
+    page = page || 1; currentPage = page;
+    if (status !== undefined && typeof status === 'string') currentStatus = status;
+    var url = '/api/v1/tasks?page=' + page + '&page_size=20';
+    if (currentStatus) url += '&status=' + currentStatus;
+    var kw = document.getElementById('search-input').value.trim();
+    if (kw) url += '&keyword=' + encodeURIComponent(kw);
+    App.get(url).then(renderTasks);
+}
+
+var servicesData = {};
+var nodeNames = {};
+var tasksLoaded = false;
+var currentStatus = '';
+
+Promise.all([
+    App.get('/api/v1/mcp-nodes?page_size=100'),
+    App.get('/api/v1/mcp-services?is_verified=true&status=true')
+]).then(function(results) {
+    var nd = results[0], sd = results[1];
+    if (nd.data && nd.data.items) nd.data.items.forEach(function(n) { nodeNames[n.id] = n.name; });
+    if (sd.data && sd.data.items) sd.data.items.forEach(function(s) {
+        if (!servicesData[s.service_type]) servicesData[s.service_type] = [];
+        servicesData[s.service_type].push(s);
+    });
+    loadTasks(currentStatus);
+});
+
+function openTaskModal(presetType) {
+    if (!Object.keys(servicesData).length) { App.modal.alert('提示', '服务数据加载中，请稍后再试'); return; }
+    var types = Object.keys(servicesData);
+    if (!types.length) { App.modal.alert('提示', '暂无可用服务'); return; }
+
+    var opts = '<option value="">请选择服务</option>';
+    types.forEach(function(t) {
+        var nodes = servicesData[t];
+        if (!nodes || !nodes.length) return;
+        var s = nodes[0];
+        opts += '<option value="' + t + '" ' + (presetType===t?'selected':'') + '>' + s.service_name + ' (¥' + s.price_per_call + '/次)</option>';
+    });
+
+    App.modal.form('提交任务',
+        '<label class="text-xs text-gray-500 mb-1">选择服务</label>' +
+        '<select id="tm-type" class="w-full px-3 py-2 border rounded-lg mb-3" onchange="onTaskTypeChange()">' + opts + '</select>' +
+        '<div id="tm-node-wrap" class="hidden mb-3"><label class="text-xs text-gray-500 mb-1">选择节点</label>' +
+        '<select id="tm-node" class="w-full px-3 py-2 border rounded-lg"><option value="">随机分配</option></select></div>' +
+        '<div id="tm-params" class="space-y-3"></div>',
+        function() {
+            var st = document.getElementById('tm-type').value;
+            var allNodes = servicesData[st];
+            if (!allNodes || !allNodes.length) { App.modal.alert('提示', '请选择服务'); return; }
+            var params = allNodes[0].params || [];
+            var input = {};
+            for (var i = 0; i < params.length; i++) {
+                var p = params[i], el = document.getElementById('tp_' + p.field);
+                if (!el) continue;
+                var val = el.value.trim();
+                if (!val && p.required) { App.modal.alert('提示', '请填写「' + p.label + '」'); return; }
+                if (!val) continue;
+                if (p.type === 'int') val = parseInt(val);
+                else if (p.type === 'float') val = parseFloat(val);
+                else if (p.type === 'list' || p.type === 'dict') {
+                    try { val = JSON.parse(val); } catch(e) { App.modal.alert('错误', p.label + ' JSON格式错误'); return; }
+                }
+                input[p.field] = val;
+            }
+            App.post('/api/v1/tasks', {service_type: st, request_params: {input: input}}).then(function(d) {
+                if (d.code===0) { App.modal.hide(); loadTasks(''); } else App.modal.alert('错误', d.message);
+            });
+        }
+    );
+}
+
+window.onTaskTypeChange = function() {
+    var st = document.getElementById('tm-type').value;
+    var allNodes = servicesData[st] || [];
+    var params = (allNodes.length && allNodes[0].params) || [];
+    var el = document.getElementById('tm-params');
+    var nw = document.getElementById('tm-node-wrap');
+    var ns = document.getElementById('tm-node');
+
+    if (!params.length) { el.innerHTML = allNodes.length ? '<div class="text-xs text-gray-400">无需参数</div>' : ''; nw.classList.add('hidden'); return; }
+    var html = '';
+    params.forEach(function(p) {
+        var req = p.required ? ' *' : '', inputHtml = '';
+        if (p.type==='bool'||p.type==='boolean') inputHtml = '<select id="tp_'+p.field+'" class="w-full px-3 py-2 border rounded-lg"><option value="true">是</option><option value="false">否</option></select>';
+        else if (p.type==='int'||p.type==='float') inputHtml = '<input type="number" id="tp_'+p.field+'" step="'+(p.type==='float'?'any':'1')+'" class="w-full px-3 py-2 border rounded-lg">';
+        else if (p.type==='list'||p.type==='dict') inputHtml = '<textarea id="tp_'+p.field+'" rows="3" class="w-full px-3 py-2 border rounded-lg font-mono text-sm"></textarea>';
+        else inputHtml = '<input type="text" id="tp_'+p.field+'" class="w-full px-3 py-2 border rounded-lg">';
+        html += '<div><label class="block text-xs text-gray-500 mb-1">'+(p.label||p.field)+req+'</label>'+inputHtml+'</div>';
+    });
+    el.innerHTML = html;
+
+    // 节点选择
+    nw.classList.toggle('hidden', allNodes.length === 0);
+    ns.innerHTML = '<option value="">随机分配</option>';
+    allNodes.forEach(function(s) {
+        var nname = nodeNames[s.node_id] || ('节点 ' + s.node_id);
+        ns.innerHTML += '<option value="' + s.node_id + '">【' + s.node_id + '】' + nname + ' - ¥' + s.price_per_call.toFixed(2) + '</option>';
+    });
+};
+</script>
+{% endblock %}

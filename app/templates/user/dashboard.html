@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}控制台 - {{ settings.APP_NAME }}{% endblock %}
+{% block content %}
+<h1 class="text-2xl font-bold mb-6">控制台</h1>
+
+<div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+    <div class="card p-5">
+        <p class="text-xs text-gray-400 mb-1">账户余额</p>
+        <p class="text-2xl font-bold text-indigo-600">¥{{ "%.2f"|format(user.balance) }}</p>
+    </div>
+    <div class="card p-5">
+        <p class="text-xs text-gray-400 mb-1">今日任务</p>
+        <p class="text-2xl font-bold text-blue-600" id="stat-today">-</p>
+    </div>
+    <div class="card p-5">
+        <p class="text-xs text-gray-400 mb-1">今日完成</p>
+        <p class="text-2xl font-bold text-green-600" id="stat-completed">-</p>
+    </div>
+    <div class="card p-5">
+        <p class="text-xs text-gray-400 mb-1">在线节点</p>
+        <p class="text-2xl font-bold text-indigo-600" id="stat-nodes">-</p>
+    </div>
+</div>
+
+<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+    <a href="/tasks" class="bg-indigo-600 text-white rounded-lg p-6 hover:bg-indigo-700 transition text-center">
+        <span class="text-lg font-semibold">我的任务</span>
+        <p class="text-sm text-indigo-200 mt-1">查看和管理所有任务</p>
+    </a>
+    <a href="/services" class="bg-white border border-gray-200 rounded-lg p-6 hover:shadow-md transition text-center">
+        <span class="text-lg font-semibold text-gray-700">服务市场</span>
+        <p class="text-sm text-gray-400 mt-1">浏览可用 MCP 服务</p>
+    </a>
+</div>
+
+<script>
+App.get('/api/v1/stats').then(function(d) {
+    if (d.code === 0) {
+        document.getElementById('stat-today').textContent = d.data.today_tasks;
+        document.getElementById('stat-completed').textContent = d.data.today_completed;
+        document.getElementById('stat-nodes').textContent = d.data.online_nodes;
+    }
+});
+</script>
+{% endblock %}

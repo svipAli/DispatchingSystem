@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}充值管理 - {{ settings.APP_NAME }}{% endblock %}
+{% block content %}
+<div class="flex justify-between items-center mb-6">
+    <h1 class="text-2xl font-bold">充值管理</h1>
+    <button onclick="openRechargeModal()" class="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-indigo-700">新建充值</button>
+</div>
+<div id="modal-overlay" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 hidden">
+    <div class="bg-white rounded-xl p-6 w-full max-w-md mx-4">
+        <h2 class="text-lg font-bold mb-4">新建充值订单</h2>
+        <form onsubmit="doCreateRecharge(); return false;">
+            <input type="number" id="recharge-user-id" placeholder="用户ID" required class="w-full px-3 py-2 border rounded-lg mb-3">
+            <input type="number" id="recharge-amount" placeholder="金额" step="0.01" required class="w-full px-3 py-2 border rounded-lg mb-3">
+            <input type="text" id="recharge-remark" placeholder="备注" class="w-full px-3 py-2 border rounded-lg mb-4">
+            <div class="flex justify-end space-x-2">
+                <button type="button" onclick="document.getElementById('modal-overlay').classList.add('hidden')" class="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg">取消</button>
+                <button type="submit" class="px-4 py-2 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">创建</button>
+            </div>
+        </form>
+    </div>
+</div>
+<div id="recharge-list"><div class="text-center text-gray-400 py-12">加载中...</div></div>
+<div id="pagination" class="mt-4"></div>
+<script>
+var statusMap = {pending: '待处理', completed: '已完成', cancelled: '已取消'}, currentPage = 1;
+function loadRecharges(page) {
+    page = page || 1; currentPage = page;
+    App.get('/api/v1/recharges?page=' + page + '&page_size=20').then(function(data) {
+        var el = document.getElementById('recharge-list');
+        if (!data.data || !data.data.items.length) { el.innerHTML = '<div class="text-center text-gray-400 py-12">暂无充值记录</div>'; document.getElementById('pagination').innerHTML=''; return; }
+        var html = '<table class="w-full text-sm bg-white rounded-lg shadow-sm border"><thead class="bg-gray-50"><tr><th class="px-4 py-3 text-left">ID</th><th class="px-4 py-3 text-left">用户</th><th class="px-4 py-3 text-left">金额</th><th class="px-4 py-3 text-left">状态</th><th class="px-4 py-3 text-left">操作</th></tr></thead><tbody>';
+        data.data.items.forEach(function(o) {
+            html += '<tr class="border-t"><td class="px-4 py-3">'+o.id+'</td><td class="px-4 py-3">'+o.user_id+'</td><td class="px-4 py-3 font-medium">¥'+o.amount.toFixed(2)+'</td><td class="px-4 py-3">'+(statusMap[o.order_status]||o.order_status)+'</td><td class="px-4 py-3">'+(o.order_status==='pending'?'<button onclick="completeRecharge('+o.id+')" class="text-indigo-600 text-xs hover:underline">确认完成</button>':'—')+'</td></tr>';
+        });
+        html += '</tbody></table>'; el.innerHTML = html;
+        App.pagination(data.data.total, currentPage, data.data.page_size, 'pagination', 'loadRecharges');
+    });
+}
+function openRechargeModal() { document.getElementById('modal-overlay').classList.remove('hidden'); }
+function doCreateRecharge() {
+    App.post('/api/v1/recharges', {user_id:parseInt(document.getElementById('recharge-user-id').value), amount:parseFloat(document.getElementById('recharge-amount').value), remark:document.getElementById('recharge-remark').value})
+        .then(function(d){ if(d.code===0){ loadRecharges(1); document.getElementById('modal-overlay').classList.add('hidden'); } });
+}
+function completeRecharge(oid) { App.post('/api/v1/recharges/'+oid+'/complete',{}).then(function(){ loadRecharges(currentPage); }); }
+loadRecharges(1);
+</script>
+{% endblock %}

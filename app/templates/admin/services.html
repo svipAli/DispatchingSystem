@@ -1,0 +1,325 @@
+{% extends "base.html" %}
+{% block title %}服务管理 - {{ settings.APP_NAME }}{% endblock %}
+{% block content %}
+<div class="flex justify-between items-center mb-4">
+    <h1 class="text-2xl font-bold">服务管理</h1>
+    <button onclick="addService()" class="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-indigo-700">添加服务</button>
+</div>
+<div class="flex flex-wrap items-center gap-2 mb-4">
+    <input type="text" id="search-input" placeholder="搜索服务名称、类型..." class="px-3 py-2 border rounded-lg text-sm w-48">
+    <select id="filter-node" class="px-3 py-2 border rounded-lg text-sm">
+        <option value="">全部节点</option>
+    </select>
+    <select id="filter-verified" class="px-3 py-2 border rounded-lg text-sm">
+        <option value="">全部审核</option>
+        <option value="true">已审核</option>
+        <option value="false">待审核</option>
+    </select>
+    <select id="filter-status" class="px-3 py-2 border rounded-lg text-sm">
+        <option value="">全部状态</option>
+        <option value="true">启用</option>
+        <option value="false">禁用</option>
+    </select>
+    <input type="date" id="filter-from" class="px-3 py-2 border rounded-lg text-sm w-36" title="创建时间从">
+    <span class="text-xs text-gray-400">至</span>
+    <input type="date" id="filter-to" class="px-3 py-2 border rounded-lg text-sm w-36" title="创建时间至">
+    <button onclick="searchData()" class="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm hover:bg-indigo-700">搜索</button>
+    <button onclick="clearSearch()" id="clear-btn" class="px-4 py-2 text-sm text-gray-500 hover:underline hidden">清除</button>
+</div>
+<div id="service-list"><div class="text-center text-gray-400 py-12">加载中...</div></div>
+<div id="pagination" class="mt-4"></div>
+
+<script>
+var currentPage = 1;
+var nodeNames = {};
+
+// 预加载节点名称映射 + 节点下拉框
+App.get('/api/v1/mcp-nodes?page_size=100').then(function(nd) {
+    var sel = document.getElementById('filter-node');
+    if (nd.data && nd.data.items) {
+        nd.data.items.forEach(function(n) {
+            nodeNames[n.id] = n.name;
+            var opt = document.createElement('option');
+            opt.value = n.id; opt.textContent = n.name;
+            sel.appendChild(opt);
+        });
+    }
+    loadServices(1);
+});
+
+function loadServices(page, keyword, isVerified, status, dateFrom, dateTo, nodeId) {
+    page = page || 1; currentPage = page;
+    var params = new URLSearchParams();
+    params.set('page', page); params.set('page_size', '10');
+    if (keyword) params.set('keyword', keyword);
+    if (isVerified !== undefined && isVerified !== null && isVerified !== '') params.set('is_verified', isVerified);
+    if (status !== undefined && status !== null && status !== '') params.set('status', status);
+    if (dateFrom) params.set('date_from', dateFrom);
+    if (dateTo) params.set('date_to', dateTo);
+    if (nodeId) params.set('node_id', nodeId);
+    App.get('/api/v1/mcp-services?' + params.toString()).then(function(data) {
+        var el = document.getElementById('service-list');
+        if (!data.data || !data.data.items.length) { el.innerHTML = '<div class="text-center text-gray-400 py-12">暂无服务</div>'; return; }
+        var html = '<table class="w-full text-sm bg-white rounded-lg shadow-sm border"><thead class="bg-gray-50"><tr>' +
+            '<th class="px-4 py-3 text-left">服务名称</th><th class="px-4 py-3 text-left">类型</th>' +
+            '<th class="px-4 py-3 text-left">版本</th><th class="px-4 py-3 text-left">节点</th>' +
+            '<th class="px-4 py-3 text-left">单价</th><th class="px-4 py-3 text-left">超时</th><th class="px-4 py-3 text-left">审核</th>' +
+            '<th class="px-4 py-3 text-left">操作</th></tr></thead><tbody>';
+        data.data.items.forEach(function(s) {
+            html += '<tr class="border-t">' +
+                '<td class="px-4 py-3 font-medium">' + s.service_name + '</td>' +
+                '<td class="px-4 py-3 text-xs text-gray-500">' + s.service_type + '</td>' +
+                '<td class="px-4 py-3 text-xs">' + (s.version || '-') + '</td>' +
+                '<td class="px-4 py-3 text-xs">' + (nodeNames[s.node_id] || '节点-' + s.node_id) + '</td>' +
+                '<td class="px-4 py-3 text-indigo-600 font-medium">¥' + s.price_per_call.toFixed(2) + '</td>' +
+                '<td class="px-4 py-3 text-xs">' + (s.timeout||300) + '秒</td>' +
+                '<td class="px-4 py-3">' + (s.is_verified ? '<span class="text-green-600">已审核</span>' : '<span class="text-yellow-500">待审核</span>') + '</td>' +
+                '<td class="px-4 py-3 text-xs whitespace-nowrap">' +
+                '<button onclick="viewDetail(' + s.id + ')" class="text-gray-600 mr-1 hover:underline">详情</button>' +
+                '<button onclick="editService(' + s.id + ',\'' + (s.service_name||'') + '\',' + s.price_per_call + ',\'' + (s.version||'') + '\',' + (s.timeout||300) + ')" class="text-indigo-600 mr-1 hover:underline">编辑</button>' +
+                '<button onclick="toggleService(' + s.id + ',' + s.status + ')" class="' + (s.status ? 'text-orange-500' : 'text-green-500') + ' mr-1 hover:underline">' + (s.status ? '禁用' : '启用') + '</button>' +
+                (s.is_verified ? '' : '<button onclick="verifyService(' + s.id + ')" class="text-green-600 mr-1 hover:underline">审核</button>') +
+                '<button onclick="restoreOriginalParams(' + s.id + ')" class="text-orange-500 mr-1 hover:underline text-xs">恢复原始</button>' +
+                '<button onclick="deleteService(' + s.id + ',\'' + (s.service_name||'') + '\')" class="text-red-500 hover:underline">删除</button>' +
+                '</td></tr>';
+        });
+        html += '</tbody></table>'; el.innerHTML = html;
+        var tp = Math.ceil(data.data.total / data.data.page_size);
+        var pg = '<div class="flex items-center space-x-1 text-sm"><span class="text-gray-500 mr-2">共 ' + data.data.total + ' 条</span>';
+        for (var i = 1; i <= tp; i++) pg += '<button onclick="loadServices(' + i + ')" class="px-3 py-1 rounded ' + (i===page?'bg-indigo-600 text-white':'bg-gray-200') + '">' + i + '</button>';
+        pg += '</div>';
+        document.getElementById('pagination').innerHTML = pg;
+    });
+}
+
+// 查看详情（模态框展示富文本描述）
+function viewDetail(id) {
+    App.get('/api/v1/mcp-services/' + id).then(function(r) {
+        var s = r.data;
+        var html = '<div class="text-xs text-gray-400 mb-3">' +
+            (s.version ? '版本 ' + s.version + ' · ' : '') +
+            '¥' + (s.price_per_call||0).toFixed(2) + '/次' +
+            '</div>' +
+            '<div class="service-detail prose prose-sm max-w-none" style="min-height:60px;max-height:60vh;overflow-y:auto">' +
+            (s.description || '<span class="text-gray-300">暂无详情</span>') +
+            '</div>';
+        App.modal.alert(s.service_name, html);
+    });
+}
+
+var quillInstance = null;
+
+function initQuill() {
+    if (quillInstance) return quillInstance;
+    var editor = document.getElementById('quill-editor');
+    if (!editor) return null;
+    quillInstance = new Quill('#quill-editor', { theme: 'snow', modules: { toolbar: [['bold','italic','underline'],['link','image'],['blockquote','code-block'],[{list:'ordered'},{list:'bullet'}],['clean']] }, placeholder: '输入服务详情...' });
+    return quillInstance;
+}
+
+function showEditModal(title, name, price, version, descHTML, paramsList, timeout, onSubmit) {
+    var m = App.modal;
+    m._ensure();
+    var el = m._el;
+    el.querySelector('.modal-title').textContent = title;
+    el.querySelector('.modal-body').innerHTML =
+        '<div class="grid grid-cols-2 gap-3">' +
+        '<div><label class="text-xs text-gray-500">服务名称</label><input id="me-name" value="' + (name||'') + '" class="w-full px-3 py-2 border rounded-lg"></div>' +
+        '<div><label class="text-xs text-gray-500">版本号</label><input id="me-version" value="' + (version||'') + '" class="w-full px-3 py-2 border rounded-lg" placeholder="v1.0.0"></div>' +
+        '<div><label class="text-xs text-gray-500">单价（元/次）</label><input id="me-price" type="number" step="0.01" value="' + (price||0) + '" class="w-full px-3 py-2 border rounded-lg"></div>' +
+        '<div><label class="text-xs text-gray-500">超时时间（秒）</label><input id="me-timeout" type="number" min="1" max="86400" value="' + (timeout||300) + '" class="w-full px-3 py-2 border rounded-lg"></div>' +
+        '</div>' +
+        '<div class="mt-3 flex items-center justify-between"><label class="text-xs text-gray-500">参数设置</label><button type="button" onclick="addParamRow()" class="text-xs text-indigo-600 hover:underline">+ 添加参数</button></div>' +
+        '<div id="me-params-table" class="mt-1 space-y-1 max-h-48 overflow-y-auto"></div>' +
+        '<label class="text-xs text-gray-500 mt-3 mb-1">服务详情（富文本）</label>' +
+        '<div id="quill-editor" style="height:200px"></div>';
+    el.querySelector('.modal-footer').innerHTML =
+        '<button class="modal-btn-cancel" style="padding:8px 20px;border:1px solid #d1d5db;border-radius:8px;background:#fff;cursor:pointer">取消</button>' +
+        '<button class="modal-btn-ok" style="padding:8px 20px;border:none;border-radius:8px;background:#4f46e5;color:#fff;cursor:pointer">保存</button>';
+    el.querySelector('.modal-btn-cancel').onclick = m.hide;
+    el.querySelector('.modal-btn-ok').onclick = function() { m.hide(); if (onSubmit) onSubmit(); };
+    el.querySelector('.modal-box').style.maxWidth = '750px';
+    el.style.display = 'flex';
+    quillInstance = null;
+    setTimeout(function() {
+        var q = initQuill();
+        if (q && descHTML) q.root.innerHTML = descHTML;
+        // 渲染参数表格
+        window._editParams = paramsList || [];
+        renderParamsTable();
+    }, 100);
+}
+
+function renderParamsTable() {
+    var rows = window._editParams || [];
+    var html = '<div class="bg-gray-50 rounded-lg border p-2">' +
+        '<div class="grid grid-cols-12 gap-1 text-xs text-gray-400 font-medium pb-2 mb-1 border-b">' +
+        '<span class="col-span-2">字段名</span><span class="col-span-2">标签</span><span class="col-span-1">类型</span><span class="col-span-1">必填</span><span class="col-span-5">说明</span><span class="col-span-1"></span>' +
+        '</div>';
+    rows.forEach(function(p, i) {
+        html += '<div class="grid grid-cols-12 gap-1 items-center mb-1 text-xs">' +
+            '<input value="' + (p.field||'') + '" placeholder="field" class="param-field col-span-2 px-2 py-1.5 border rounded bg-white">' +
+            '<input value="' + (p.label||'') + '" placeholder="标签" class="param-label col-span-2 px-2 py-1.5 border rounded bg-white">' +
+            '<select class="param-type col-span-1 px-1 py-1.5 border rounded bg-white">' +
+                '<option value="string" ' + (p.type==='string'?'selected':'') + '>string</option>' +
+                '<option value="int" ' + (p.type==='int'?'selected':'') + '>int</option>' +
+                '<option value="float" ' + (p.type==='float'?'selected':'') + '>float</option>' +
+                '<option value="bool" ' + (p.type==='bool'?'selected':'') + '>bool</option>' +
+                '<option value="list" ' + (p.type==='list'?'selected':'') + '>list</option>' +
+                '<option value="dict" ' + (p.type==='dict'?'selected':'') + '>dict</option>' +
+            '</select>' +
+            '<label class="col-span-1 flex justify-center"><input type="checkbox" class="param-req" ' + (p.required?'checked':'') + '></label>' +
+            '<input value="' + (p.description||'') + '" placeholder="参数说明" class="param-desc col-span-5 px-2 py-1.5 border rounded bg-white">' +
+            '<button onclick="delParamRow(' + i + ')" class="col-span-1 text-gray-400 hover:text-red-500 text-lg leading-none">&times;</button>' +
+            '</div>';
+    });
+    html += '</div>';
+    document.getElementById('me-params-table').innerHTML = html;
+}
+function addParamRow() {
+    window._editParams.push({field:'',label:'',type:'string',required:false,description:''});
+    renderParamsTable();
+}
+function addParamRow2() {
+    window._addParams = window._addParams || [];
+    window._addParams.push({field:'',label:'',type:'string',required:false,description:''});
+    renderAddParamsTable();
+}
+function delParamRow(i) { window._editParams.splice(i, 1); renderParamsTable(); }
+function delAddParamRow(i) { window._addParams.splice(i, 1); renderAddParamsTable(); }
+
+function renderAddParamsTable() {
+    var rows = window._addParams || [];
+    var html = '<div class="bg-gray-50 rounded-lg border p-2">' +
+        '<div class="grid grid-cols-12 gap-1 text-xs text-gray-400 font-medium pb-2 mb-1 border-b">' +
+        '<span class="col-span-2">字段名</span><span class="col-span-2">标签</span><span class="col-span-1">类型</span><span class="col-span-1">必填</span><span class="col-span-5">说明</span><span class="col-span-1"></span>' +
+        '</div>';
+    rows.forEach(function(p, i) {
+        html += '<div class="grid grid-cols-12 gap-1 items-center mb-1 text-xs">' +
+            '<input value="' + (p.field||'') + '" placeholder="field" class="param-field col-span-2 px-2 py-1.5 border rounded bg-white">' +
+            '<input value="' + (p.label||'') + '" placeholder="标签" class="param-label col-span-2 px-2 py-1.5 border rounded bg-white">' +
+            '<select class="param-type col-span-1 px-1 py-1.5 border rounded bg-white">' + ['string','int','float','bool','list','dict'].map(function(t){return '<option value="'+t+'" '+(p.type===t?'selected':'')+'>'+t+'</option>';}).join('') + '</select>' +
+            '<label class="col-span-1 flex justify-center"><input type="checkbox" class="param-req" ' + (p.required?'checked':'') + '></label>' +
+            '<input value="' + (p.description||'') + '" placeholder="参数说明" class="param-desc col-span-5 px-2 py-1.5 border rounded bg-white">' +
+            '<button onclick="delAddParamRow(' + i + ')" class="col-span-1 text-gray-400 hover:text-red-500 text-lg leading-none">&times;</button>' +
+            '</div>';
+    });
+    html += '</div>';
+    document.getElementById('ms-params-table').innerHTML = html;
+}
+
+function collectParams(tableId) {
+    var rows = document.querySelectorAll('#' + tableId + ' .grid.items-center');
+    var params = [];
+    rows.forEach(function(r) {
+        var field = (r.querySelector('.param-field')||{}).value || '';
+        if (!field.trim()) return;
+        params.push({
+            field: field.trim(),
+            label: (r.querySelector('.param-label')||{}).value || '',
+            type: (r.querySelector('.param-type')||{}).value || 'string',
+            required: (r.querySelector('.param-req')||{}).checked || false,
+            description: (r.querySelector('.param-desc')||{}).value || ''
+        });
+    });
+    return params;
+}
+
+function addService() {
+    window._addParams = [];
+    App.get('/api/v1/mcp-nodes?page_size=100').then(function(nd) {
+        var nodeOpts = '';
+        if (nd.data && nd.data.items) nd.data.items.forEach(function(n) { nodeOpts += '<option value="' + n.id + '">' + n.name + '</option>'; });
+        var m = App.modal;
+        m._ensure(); var el = m._el;
+        el.querySelector('.modal-title').textContent = '添加服务';
+        el.querySelector('.modal-body').innerHTML =
+            '<div class="grid grid-cols-2 gap-3" style="">' +
+            '<div><label class="text-xs text-gray-500">所属节点</label><select id="ms-node" class="w-full px-3 py-2 border rounded-lg">' + nodeOpts + '</select></div>' +
+            '<div><label class="text-xs text-gray-500">服务名称</label><input id="ms-name" class="w-full px-3 py-2 border rounded-lg"></div>' +
+            '<div><label class="text-xs text-gray-500">服务类型标识</label><input id="ms-type" class="w-full px-3 py-2 border rounded-lg" placeholder="text-generation"></div>' +
+            '<div><label class="text-xs text-gray-500">版本号</label><input id="ms-version" class="w-full px-3 py-2 border rounded-lg" placeholder="v1.0.0"></div>' +
+            '<div><label class="text-xs text-gray-500">单价</label><input id="ms-price" type="number" step="0.01" value="0.01" class="w-full px-3 py-2 border rounded-lg"></div>' +
+            '<div><label class="text-xs text-gray-500">超时时间（秒）</label><input id="ms-timeout" type="number" min="1" max="86400" value="300" class="w-full px-3 py-2 border rounded-lg"></div>' +
+            '</div>' +
+            '<div class="mt-3 flex items-center justify-between"><label class="text-xs text-gray-500">参数设置</label><button type="button" onclick="addParamRow2()" class="text-xs text-indigo-600 hover:underline">+ 添加参数</button></div>' +
+            '<div id="ms-params-table" class="mt-1 space-y-1 max-h-48 overflow-y-auto"></div>' +
+            '<label class="text-xs text-gray-500 mt-3 mb-1">服务详情（富文本）</label>' +
+            '<div id="quill-editor" style="height:200px"></div>';
+        el.querySelector('.modal-footer').innerHTML =
+            '<button class="modal-btn-cancel" style="padding:8px 20px;border:1px solid #d1d5db;border-radius:8px;background:#fff;cursor:pointer">取消</button>' +
+            '<button class="modal-btn-ok" style="padding:8px 20px;border:none;border-radius:8px;background:#4f46e5;color:#fff;cursor:pointer">创建</button>';
+        el.querySelector('.modal-btn-cancel').onclick = m.hide;
+        el.querySelector('.modal-btn-ok').onclick = function() {
+            m.hide();
+            var desc = quillInstance ? quillInstance.root.innerHTML : '';
+            var params = collectParams('ms-params-table');
+            App.post('/api/v1/mcp-services', {node_id: parseInt(document.getElementById('ms-node').value), service_name: document.getElementById('ms-name').value, service_type: document.getElementById('ms-type').value, version: document.getElementById('ms-version').value, price_per_call: parseFloat(document.getElementById('ms-price').value), timeout: parseInt(document.getElementById('ms-timeout').value), description: desc, params: params})
+                .then(function(r) { if (r.code===0) loadServices(currentPage); else App.modal.confirm('错误', r.message, function(){}); });
+        };
+        el.querySelector('.modal-box').style.maxWidth = '700px';
+        el.style.display = 'flex';
+        quillInstance = null;
+        setTimeout(function() { initQuill(); renderAddParamsTable(); }, 100);
+    });
+}
+
+function editService(id, name, price, version, timeout) {
+    App.get('/api/v1/mcp-services/' + id).then(function(r) {
+        var s = r.data || {};
+        var desc = s.description || '';
+        var params = s.params || [];
+        showEditModal('编辑服务 - ' + name, name, price, version, desc, params, timeout || s.timeout || 300, function() {
+            var desc = quillInstance ? quillInstance.root.innerHTML : '';
+            var params = collectParams('me-params-table');
+            App.put('/api/v1/mcp-services/' + id, {service_name: document.getElementById('me-name').value, version: document.getElementById('me-version').value, price_per_call: parseFloat(document.getElementById('me-price').value), timeout: parseInt(document.getElementById('me-timeout').value), description: desc, params: params})
+            .then(function(r) { if (r.code===0) loadServices(currentPage); else App.modal.alert('错误', r.message); });
+    });
+    });
+}
+
+function verifyService(id) { App.put('/api/v1/mcp-services/' + id, {is_verified: true}).then(function(r) { if (r.code===0) loadServices(currentPage); }); }
+
+function toggleService(id, currentStatus) {
+    App.put('/api/v1/mcp-services/' + id, {status: !currentStatus}).then(function(r) {
+        if (r.code===0) loadServices(currentPage);
+    });
+}
+
+function restoreOriginalParams(id) {
+    App.get('/api/v1/mcp-services/' + id).then(function(r) {
+        var orig = (r.data && r.data.original_params) ? r.data.original_params : null;
+        if (!orig || !orig.length) { App.modal.alert('提示', '没有原始参数备份'); return; }
+        App.modal.confirm('恢复原始参数', '确定用原始参数覆盖当前参数吗？', function() {
+            App.put('/api/v1/mcp-services/' + id, {params: orig}).then(function(rr) {
+                if (rr.code===0) { App.modal.alert('成功', '已恢复为原始参数'); loadServices(currentPage); }
+                else App.modal.alert('错误', rr.message);
+            });
+        });
+    });
+}
+
+function deleteService(id, name) { App.modal.confirm('删除服务', '确定删除「' + name + '」吗？', function() { App.del('/api/v1/mcp-services/' + id).then(function(r) { if (r.code===0) loadServices(currentPage); }); }); }
+
+function searchData() {
+    var kw = document.getElementById('search-input').value.trim();
+    var iv = document.getElementById('filter-verified').value;
+    var st = document.getElementById('filter-status').value;
+    var df = document.getElementById('filter-from').value;
+    var dt = document.getElementById('filter-to').value;
+    var nd = document.getElementById('filter-node').value;
+    document.getElementById('clear-btn').classList.toggle('hidden', !(kw || iv || st || df || dt || nd));
+    loadServices(1, kw || undefined, iv || undefined, st || undefined, df || undefined, dt || undefined, nd || undefined);
+}
+function clearSearch() {
+    document.getElementById('search-input').value = '';
+    document.getElementById('filter-verified').value = '';
+    document.getElementById('filter-status').value = '';
+    document.getElementById('filter-from').value = '';
+    document.getElementById('filter-to').value = '';
+    document.getElementById('filter-node').value = '';
+    document.getElementById('clear-btn').classList.add('hidden');
+    loadServices(1);
+}
+</script>
+{% endblock %}

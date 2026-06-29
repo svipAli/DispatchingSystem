@@ -1,0 +1,170 @@
+{% extends "base.html" %}
+{% block title %}节点管理 - {{ settings.APP_NAME }}{% endblock %}
+{% block content %}
+<div class="flex justify-between items-center mb-4">
+    <h1 class="text-2xl font-bold">节点管理</h1>
+    <button onclick="addNode()" class="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-indigo-700">添加节点</button>
+</div>
+<div class="flex flex-wrap items-center gap-2 mb-4">
+    <input type="text" id="search-input" placeholder="搜索节点名称、IP..." class="px-3 py-2 border rounded-lg text-sm w-48">
+    <select id="filter-status" class="px-3 py-2 border rounded-lg text-sm">
+        <option value="">全部状态</option>
+        <option value="true">启用</option>
+        <option value="false">禁用</option>
+    </select>
+    <input type="date" id="filter-from" class="px-3 py-2 border rounded-lg text-sm w-36" title="创建时间从">
+    <span class="text-xs text-gray-400">至</span>
+    <input type="date" id="filter-to" class="px-3 py-2 border rounded-lg text-sm w-36" title="创建时间至">
+    <button onclick="searchData()" class="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm hover:bg-indigo-700">搜索</button>
+    <button onclick="clearSearch()" id="clear-btn" class="px-4 py-2 text-sm text-gray-500 hover:underline hidden">清除</button>
+</div>
+<div id="node-list" class="space-y-4"><div class="text-center text-gray-400 py-12">加载中...</div></div>
+<div id="pagination" class="mt-4"></div>
+<script>
+var currentPage = 1;
+var statusColor = {online: 'text-green-600 bg-green-100', offline: 'text-red-500 bg-red-100', busy: 'text-yellow-600 bg-yellow-100'};
+var statusLabel = {online: '在线', offline: '离线', busy: '繁忙'};
+
+function loadNodes(page, keyword, status, dateFrom, dateTo) {
+    page = page || 1; currentPage = page;
+    var params = new URLSearchParams();
+    params.set('page', page); params.set('page_size', '10');
+    if (keyword) params.set('keyword', keyword);
+    if (status !== undefined && status !== null && status !== '') params.set('status', status);
+    if (dateFrom) params.set('date_from', dateFrom);
+    if (dateTo) params.set('date_to', dateTo);
+    App.get('/api/v1/mcp-nodes?' + params.toString()).then(function(data) {
+        var el = document.getElementById('node-list');
+        if (!data.data || !data.data.items.length) { el.innerHTML = '<div class="text-center text-gray-400 py-12">暂无节点</div>'; document.getElementById('pagination').innerHTML = ''; return; }
+        var html = '';
+        data.data.items.forEach(function(n) {
+            html += '<div class="bg-white rounded-lg shadow-sm p-4 border flex justify-between items-center" data-node-id="' + n.id + '">' +
+                '<div><div class="font-medium">' + n.name + '</div>' +
+                '<div class="text-xs text-gray-400">' + n.host + ':' + n.port + ' · 负载 <span class="node-load">' + n.current_load + '</span>/' + n.max_concurrent + '</div>' +
+                (n.description ? '<div class="text-xs text-gray-400 mt-1">' + n.description + '</div>' : '') +
+                '</div>' +
+                '<div class="flex items-center space-x-3">' +
+                '<span class="node-badge px-2 py-0.5 text-xs rounded-full ' + (statusColor[n.node_status]||'') + '">' + (statusLabel[n.node_status]||n.node_status) + '</span>' +
+                (n.last_heartbeat ? '<span class="text-xs text-gray-400">' + new Date(n.last_heartbeat).toLocaleString() + '</span>' : '') +
+                '<button onclick="editNode(' + n.id + ',\'' + n.name + '\',\'' + n.host + '\',' + n.port + ',' + n.max_concurrent + ',\'' + (n.description||'') + '\')" class="text-indigo-600 text-xs hover:underline">编辑</button>' +
+                '<button onclick="viewTasks(' + n.id + ',\'' + n.name + '\')" class="text-blue-500 text-xs hover:underline">任务</button>' +
+                '<button onclick="deleteNode(' + n.id + ',\'' + n.name + '\')" class="text-red-500 text-xs hover:underline">删除</button>' +
+                '</div></div>';
+        });
+        el.innerHTML = html;
+        var tp = Math.ceil(data.data.total / data.data.page_size);
+        var pg = '<div class="flex items-center space-x-1 text-sm"><span class="text-gray-500 mr-2">共 ' + data.data.total + ' 条</span>';
+        for (var i = 1; i <= tp; i++) pg += '<button onclick="loadNodes(' + i + ')" class="px-3 py-1 rounded ' + (i===page?'bg-indigo-600 text-white':'bg-gray-200') + '">' + i + '</button>';
+        pg += '</div>';
+        document.getElementById('pagination').innerHTML = pg;
+    });
+}
+
+function addNode() {
+    App.modal.form('添加节点',
+        '<div class="grid grid-cols-2 gap-3">' +
+        '<div><label class="text-xs text-gray-500">节点名称 *</label><input id="mn-name" class="w-full px-3 py-2 border rounded-lg" placeholder="GPU服务器01"></div>' +
+        '<div><label class="text-xs text-gray-500">IP 地址 *</label><input id="mn-host" class="w-full px-3 py-2 border rounded-lg" placeholder="192.168.1.100"></div>' +
+        '<div><label class="text-xs text-gray-500">端口</label><input id="mn-port" type="number" value="8080" class="w-full px-3 py-2 border rounded-lg"></div>' +
+        '<div><label class="text-xs text-gray-500">最大并发</label><input id="mn-max" type="number" value="5" class="w-full px-3 py-2 border rounded-lg"></div>' +
+        '<div class="col-span-2"><label class="text-xs text-gray-500">备注</label><textarea id="mn-desc" rows="3" class="w-full px-3 py-2 border rounded-lg" placeholder="节点描述信息"></textarea></div>' +
+        '</div>',
+        function() {
+            var d = {name: document.getElementById('mn-name').value, host: document.getElementById('mn-host').value, port: parseInt(document.getElementById('mn-port').value), max_concurrent: parseInt(document.getElementById('mn-max').value), description: document.getElementById('mn-desc').value};
+            if (!d.name || !d.host) { App.modal.alert('提示', '名称和IP必填'); return; }
+            App.post('/api/v1/mcp-nodes', d).then(function(r) {
+                if (r.code===0) { App.modal.close(); loadNodes(currentPage); } else App.modal.alert('错误', r.message);
+            });
+        }
+    );
+}
+
+function editNode(id, name, host, port, max, desc) {
+    App.modal.form('编辑节点 - ' + name,
+        '<div class="grid grid-cols-2 gap-3">' +
+        '<div><label class="text-xs text-gray-500">名称</label><input id="me-name" value="' + name + '" class="w-full px-3 py-2 border rounded-lg"></div>' +
+        '<div><label class="text-xs text-gray-500">IP 地址</label><input id="me-host" value="' + host + '" class="w-full px-3 py-2 border rounded-lg"></div>' +
+        '<div><label class="text-xs text-gray-500">端口</label><input id="me-port" type="number" value="' + port + '" class="w-full px-3 py-2 border rounded-lg"></div>' +
+        '<div><label class="text-xs text-gray-500">最大并发</label><input id="me-max" type="number" value="' + max + '" class="w-full px-3 py-2 border rounded-lg"></div>' +
+        '<div class="col-span-2"><label class="text-xs text-gray-500">备注</label><textarea id="me-desc" rows="3" class="w-full px-3 py-2 border rounded-lg">' + (desc||'') + '</textarea></div>' +
+        '</div>',
+        function() {
+            var d = {name: document.getElementById('me-name').value, host: document.getElementById('me-host').value, port: parseInt(document.getElementById('me-port').value), max_concurrent: parseInt(document.getElementById('me-max').value), description: document.getElementById('me-desc').value};
+            App.put('/api/v1/mcp-nodes/' + id, d).then(function(r) {
+                if (r.code===0) { App.modal.close(); loadNodes(currentPage); } else App.modal.alert('错误', r.message);
+            });
+        }
+    );
+}
+
+function viewTasks(nodeId, nodeName) {
+    App.get('/api/v1/tasks/node/' + nodeId).then(function(data) {
+        var items = data.data ? data.data.items || [] : [];
+        var statusMap = {queued: '排队中', running: '执行中', completed: '已完成', failed: '失败'};
+        var html = items.length === 0 ? '<div class="text-gray-400 text-sm">暂无运行任务</div>' :
+            '<table class="w-full text-xs"><thead><tr><th class="text-left py-1">任务ID</th><th class="text-left py-1">服务</th><th class="text-left py-1">状态</th><th class="text-left py-1">费用</th></tr></thead><tbody>' +
+            items.map(function(t) {
+                return '<tr><td class="py-1">' + t.id + '</td><td class="py-1">' + t.service_type + '</td><td class="py-1">' + (statusMap[t.status]||t.status) + '</td><td class="py-1">¥' + t.cost.toFixed(2) + '</td></tr>';
+            }).join('') + '</tbody></table>';
+        App.modal.alert('节点任务 - ' + nodeName, html);
+    });
+}
+
+function deleteNode(id, name) {
+    App.modal.confirm('删除节点', '确定删除「' + name + '」吗？', function() {
+        App.del('/api/v1/mcp-nodes/' + id).then(function(r) {
+            if (r.code===0) loadNodes(currentPage);
+        });
+    });
+}
+
+function searchData() {
+    var kw = document.getElementById('search-input').value.trim();
+    var st = document.getElementById('filter-status').value;
+    var df = document.getElementById('filter-from').value;
+    var dt = document.getElementById('filter-to').value;
+    document.getElementById('clear-btn').classList.toggle('hidden', !(kw || st || df || dt));
+    loadNodes(1, kw || undefined, st || undefined, df || undefined, dt || undefined);
+}
+function clearSearch() {
+    document.getElementById('search-input').value = '';
+    document.getElementById('filter-status').value = '';
+    document.getElementById('filter-from').value = '';
+    document.getElementById('filter-to').value = '';
+    document.getElementById('clear-btn').classList.add('hidden');
+    loadNodes(1);
+}
+loadNodes(1);
+
+// ===== WebSocket 实时状态 =====
+var wsStatus = {};
+function connectWS() {
+    var ws = new WebSocket('ws://' + location.host + '/ws/admin');
+    ws.onmessage = function(e) {
+        var msg = JSON.parse(e.data);
+        if (msg.nodes) {
+            msg.nodes.forEach(function(n) { wsStatus[n.node_id] = {status: n.status, load: n.load}; });
+            updateNodeStatuses();
+        }
+    };
+    ws.onclose = function() { setTimeout(connectWS, 3000); };
+}
+function updateNodeStatuses() {
+    document.querySelectorAll('[data-node-id]').forEach(function(el) {
+        var nid = parseInt(el.getAttribute('data-node-id'));
+        var s = wsStatus[nid];
+        if (s) {
+            var badge = el.querySelector('.node-badge');
+            if (badge) {
+                badge.textContent = statusLabel[s.status] || s.status;
+                badge.className = 'node-badge px-2 py-0.5 text-xs rounded-full ' +
+                    (s.status === 'online' ? 'text-green-600 bg-green-100' : s.status === 'busy' ? 'text-yellow-600 bg-yellow-100' : 'text-red-500 bg-red-100');
+            }
+            var loadEl = el.querySelector('.node-load');
+            if (loadEl) loadEl.textContent = s.load;
+        }
+    });
+}
+connectWS();
+</script>
+{% endblock %}

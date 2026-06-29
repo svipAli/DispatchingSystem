@@ -1,0 +1,43 @@
+# ===== 节点配置 =====
+node:
+  id: 2001
+  name: "示例节点-01"
+  port: 8201
+  max_concurrent: 10
+  platform_ws_url: "ws://localhost:8000/ws/node/2001"
+  heartbeat_interval: 5
+  description: "示例 MCP 节点"
+
+# ===== 服务列表 =====
+services:
+  - name: "文本生成"
+    type: "text-generation"
+    version: "1.0.0"
+    description: "<h3>功能说明</h3><p>示例文本生成服务</p>"
+    params:
+      - field: "prompt"
+        label: "提示词"
+        type: "string"
+        required: true
+        description: "输入给AI的提示文本"
+      - field: "max_tokens"
+        label: "最大长度"
+        type: "int"
+        required: false
+        description: "生成文本的最大token数"
+
+  - name: "示例服务"
+    type: "example-service"
+    version: "1.0.0"
+    description: "<h3>功能说明</h3><p>这是一个示例服务</p>"
+    params:
+      - field: "username"
+        label: "用户名"
+        type: "string"
+        required: true
+        description: "登录账户"
+      - field: "count"
+        label: "数量"
+        type: "int"
+        required: false
+        description: "处理数量"

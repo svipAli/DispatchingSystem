@@ -1,0 +1,186 @@
+{% extends "base.html" %}
+{% block title %}AI 助手 - {{ settings.APP_NAME }}{% endblock %}
+{% block head_extra %}
+<style>
+.markdown-body { font-size: 0.875rem; line-height: 1.6; }
+.markdown-body p { margin-bottom: 0.5rem; }
+.markdown-body table { width: 100%; border-collapse: collapse; margin: 0.5rem 0; font-size: 0.8rem; }
+.markdown-body th, .markdown-body td { border: 1px solid #e5e7eb; padding: 4px 8px; text-align: left; }
+.markdown-body th { background: #f9fafb; font-weight: 600; }
+.markdown-body code { background: #f3f4f6; padding: 1px 4px; border-radius: 3px; font-size: 0.8rem; }
+.markdown-body pre { background: #1f2937; color: #f9fafb; padding: 8px 12px; border-radius: 6px; overflow-x: auto; font-size: 0.75rem; }
+.markdown-body pre code { background: none; padding: 0; color: inherit; }
+.markdown-body ul, .markdown-body ol { padding-left: 1.5rem; margin-bottom: 0.5rem; }
+.markdown-body h1, .markdown-body h2, .markdown-body h3 { font-weight: 600; margin: 0.75rem 0 0.25rem; }
+.markdown-body h1 { font-size: 1.1rem; } .markdown-body h2 { font-size: 1rem; } .markdown-body h3 { font-size: 0.9rem; }
+.markdown-body strong { font-weight: 600; }
+.markdown-body blockquote { border-left: 3px solid #d1d5db; padding-left: 0.75rem; color: #6b7280; margin: 0.5rem 0; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="h-[calc(100vh-100px)] flex flex-col max-w-4xl mx-auto w-full">
+    <div id="chat-interface" class="hidden flex-1 flex flex-col min-h-0">
+            <div class="flex justify-between items-center mb-3">
+                <h1 class="text-xl font-bold">AI 管理助手</h1>
+                <button onclick="clearChat()" class="text-xs text-gray-400 hover:text-red-500">清空对话</button>
+            </div>
+            <div id="chat-box" class="flex-1 bg-white rounded-lg shadow-sm border p-4 overflow-y-auto mb-3 space-y-3">
+                <div class="text-center text-gray-300 text-sm py-12" id="placeholder">
+                    <p class="text-lg mb-1">🤖</p><p>AI 运维助手已就绪</p>
+                </div>
+            </div>
+            <div class="bg-white rounded-lg shadow-sm border p-3 flex space-x-2 items-center">
+                <textarea id="msg-input" rows="1" placeholder="输入问题..." class="flex-1 px-3 py-2 border rounded-lg resize-none focus:ring-2 focus:ring-indigo-500"
+                    onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMsg();}"></textarea>
+                <label class="flex items-center text-xs text-gray-400 whitespace-nowrap cursor-pointer">
+                    <input type="checkbox" id="thinking-toggle" class="mr-1"> 思考
+                </label>
+                <button onclick="sendMsg()" id="send-btn" class="bg-indigo-600 text-white px-5 py-2 rounded-lg hover:bg-indigo-700 text-sm">发送</button>
+            <button onclick="stopReply()" id="stop-btn" class="hidden bg-red-100 text-red-600 w-9 h-9 rounded-lg hover:bg-red-200 text-sm flex items-center justify-center" title="停止生成">■</button>
+            </div>
+            <div id="status" class="text-xs text-gray-400 mt-1"></div>
+        </div>
+        <div id="not-configured" class="hidden text-center text-gray-400 py-16">
+            <p class="text-lg mb-2">🤖</p><p>AI 助手未配置</p>
+            <p class="text-xs mt-1">请在 <a href="/admin/config" class="text-indigo-500 hover:underline">系统设置</a> 中填写 AI API 信息</p>
+        </div>
+    </div>
+</div>
+
+<script>
+var ws, token = localStorage.getItem('token'), statusEl = document.getElementById('status');
+var chatBox = document.getElementById('chat-box'), placeholder = document.getElementById('placeholder');
+var currentBubble = null, chatHistory = [], offset = 0, hasMore = false, loadingMore = false;
+
+function init() {
+    if (!token) return;
+    App.get('/api/v1/system-configs?page_size=100').then(function(d) {
+        var cfgs = {}; if (d.data && d.data.items) d.data.items.forEach(function(c) { cfgs[c.key] = c.value; });
+        if (!cfgs.ai_api_key) { showNotConfigured(); return; }
+        document.getElementById('chat-interface').classList.remove('hidden');
+        loadHistory(); connect();
+    }).catch(function() { showNotConfigured(); });
+}
+
+function showNotConfigured() {
+    document.getElementById('chat-interface').classList.add('hidden');
+    document.getElementById('not-configured').classList.remove('hidden');
+}
+
+function connect() {
+    var proto = location.protocol === 'https:' ? 'wss' : 'ws';
+    ws = new WebSocket(proto + '://' + location.host + '/ws/admin/ai?token=' + token);
+    ws.onopen = function() { statusEl.textContent = '● 已连接'; statusEl.className = 'text-xs text-green-500 mt-1'; };
+    ws.onclose = function() {
+        statusEl.textContent = '● 已断开，3秒后重连...'; statusEl.className = 'text-xs text-red-400 mt-1';
+        if (currentBubble) { currentBubble.querySelector('.cursor-blink') && (currentBubble.querySelector('.cursor-blink').outerHTML = '<span class="text-red-300 text-xs ml-1">[回复中断]</span>'); saveHistory(); currentBubble = null; setBusy(false); }
+        setTimeout(connect, 3000);
+    };
+    ws.onerror = function() { ws.close(); };
+    ws.onmessage = function(e) {
+        var d = JSON.parse(e.data);
+        if (d.type === 'status') {
+            var el = document.createElement('div');
+            el.className = 'text-center text-xs text-gray-400 italic py-1';
+            el.textContent = d.content;
+            chatBox.appendChild(el); chatBox.scrollTop = chatBox.scrollHeight;
+        } else if (d.type === 'chunk') {
+            if (!currentBubble) { currentBubble = addBubble('ai', ''); chatHistory.push({role:'ai',text:''}); placeholder.style.display='none'; }
+            currentBubble.textContent += d.content;
+            var last = chatHistory[chatHistory.length-1]; if (last && last.role==='ai') last.text += d.content;
+            chatBox.scrollTop = chatBox.scrollHeight;
+        } else if (d.type === 'done') {
+            if (currentBubble && typeof marked !== 'undefined') {
+                try { currentBubble.innerHTML = marked.parse(currentBubble.textContent || ''); currentBubble.dataset.rendered = '1'; } catch(e) {}
+            }
+            saveHistory(); currentBubble = null; setBusy(false);
+        } else if (d.type === 'error') { addBubble('error', d.message); chatHistory.push({role:'error',text:d.message});
+            saveHistory(); currentBubble = null; setBusy(false);
+        } else if (d.type === 'cleared') { chatHistory = []; saveHistory(); chatBox.innerHTML = ''; chatBox.appendChild(placeholder); placeholder.style.display = '';
+        } else if (d.type === 'thinking' && d.content) {
+            if (!currentBubble) { currentBubble = addBubble('thinking', ''); }
+            currentBubble.querySelector('.thinking-content').textContent += d.content;
+        }
+    };
+}
+
+function addBubble(role, text, prepend) {
+    var div = document.createElement('div');
+    div.className = 'flex ' + (role==='user'?'justify-end':'justify-start');
+    var b = document.createElement('div');
+    b.className = 'max-w-[85%] rounded-lg px-4 py-2 text-sm ' +
+        (role==='user'?'bg-indigo-600 text-white':role==='thinking'?'bg-gray-50 border border-dashed border-gray-200 text-gray-400 italic':role==='error'?'bg-red-50 text-red-600 border border-red-200':'bg-gray-100 text-gray-800');
+    b.dataset.role = role;
+    if (role==='thinking') b.innerHTML = '<details open><summary class="text-xs cursor-pointer mb-1">💭 思考中...</summary><span class="thinking-content text-xs"></span></details>';
+    else if (role==='ai' || role==='assistant') {
+        if (text && typeof marked !== 'undefined') { try { b.innerHTML = marked.parse(text); } catch(e) { b.textContent = text; } }
+        else { b.textContent = text||''; }
+        b.classList.add('markdown-body');
+        b.dataset.rendered = '1';
+    }
+    else b.textContent = text;
+    div.appendChild(b);
+    if (prepend) { var first = chatBox.querySelector('.flex'); first ? chatBox.insertBefore(div, first) : chatBox.appendChild(div); }
+    else { chatBox.appendChild(div); chatBox.scrollTop = chatBox.scrollHeight; }
+    return b;
+}
+
+function setBusy(b) { var btn = document.getElementById('send-btn'), inp = document.getElementById('msg-input'), stop = document.getElementById('stop-btn');
+    btn.disabled = b; inp.disabled = b; btn.textContent = b?'...':'发送'; stop.classList.toggle('hidden', !b); }
+function stopReply() {
+    if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({type:'stop'}));
+    if (currentBubble) { currentBubble.querySelector('.cursor-blink')?.remove(); currentBubble = null; }
+    setBusy(false);
+}
+function sendMsg() {
+    var msg = document.getElementById('msg-input').value.trim();
+    if (!msg || !ws || ws.readyState !== WebSocket.OPEN) return;
+    addBubble('user', msg); chatHistory.push({role:'user',text:msg}); saveHistory();
+    placeholder.style.display='none'; document.getElementById('msg-input').value=''; setBusy(true);
+    ws.send(JSON.stringify({type:'chat', message:msg, show_thinking:document.getElementById('thinking-toggle').checked}));
+}
+function clearChat() {
+    if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({type:'clear'}));
+    else { chatHistory = []; saveHistory(); chatBox.innerHTML = ''; chatBox.appendChild(placeholder); placeholder.style.display=''; }
+}
+function saveHistory() { localStorage.setItem('ai_chat_history', JSON.stringify(chatHistory)); }
+
+function loadHistory() {
+    App.get('/api/v1/chat-history?limit=20&offset=0').then(function(d) {
+        if (d.code===0&&d.data) { var items = d.data.items||[]; hasMore = d.data.has_more||false; offset = items.length;
+            items.reverse().forEach(function(m){ chatHistory.unshift({role:m.role,text:m.content}); addBubble(m.role,m.content,true); });
+            if (chatHistory.length) { placeholder.style.display='none'; setTimeout(renderAllMarkdown, 300); setTimeout(function() { chatBox.scrollTop = chatBox.scrollHeight; }, 350); }
+            updateLoadMoreBtn();
+            localStorage.setItem('ai_chat_history', JSON.stringify(chatHistory)); return; }
+        loadLocal();
+    }).catch(function(){ loadLocal(); });
+}
+function loadMore() {
+    if (loadingMore||!hasMore) return; loadingMore = true; var btn = document.getElementById('load-more-btn'); if (btn) btn.textContent='加载中...';
+    App.get('/api/v1/chat-history?limit=20&offset='+offset).then(function(d) {
+        if (d.code===0&&d.data) { var items = d.data.items||[]; hasMore = d.data.has_more||false; offset += items.length;
+            items.reverse().forEach(function(m){ chatHistory.unshift({role:m.role,text:m.content}); addBubble(m.role,m.content,true); });
+            setTimeout(renderAllMarkdown, 200);
+            updateLoadMoreBtn(); } loadingMore = false;
+    }).catch(function(){ loadingMore=false; });
+}
+function updateLoadMoreBtn() { var ex = document.getElementById('load-more-btn'); if (ex) ex.remove();
+    if (hasMore) { var btn = document.createElement('button'); btn.id = 'load-more-btn';
+        btn.className = 'w-full text-center text-xs text-indigo-500 hover:text-indigo-700 py-2'; btn.textContent='↑ 加载更多历史记录';
+        btn.onclick = loadMore; chatBox.insertBefore(btn, chatBox.firstChild); } }
+function loadLocal() { try { var s = localStorage.getItem('ai_chat_history'); if (s) chatHistory = JSON.parse(s); } catch(e) {}
+    chatHistory.forEach(function(m){ addBubble(m.role,m.text); placeholder.style.display='none'; });
+    setTimeout(function() { renderAllMarkdown(); chatBox.scrollTop = chatBox.scrollHeight; }, 300); }
+
+function renderAllMarkdown() {
+    if (typeof marked === 'undefined') { setTimeout(renderAllMarkdown, 200); return; }
+    var bubbles = document.getElementById('chat-box').querySelectorAll('.markdown-body');
+    bubbles.forEach(function(md) {
+        if (md.dataset.rendered === '1') return;
+        try { md.innerHTML = marked.parse(md.textContent || ''); md.dataset.rendered = '1'; } catch(e) {}
+    });
+}
+
+init();
+</script>
+{% endblock %}

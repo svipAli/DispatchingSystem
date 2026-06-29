@@ -1,0 +1,227 @@
+{% extends "base.html" %}
+{% block title %}个人中心 - {{ settings.APP_NAME }}{% endblock %}
+{% block content %}
+<h1 class="text-2xl font-bold mb-6">个人中心</h1>
+
+<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+    {# ===== 基本信息（可编辑） ===== #}
+    <div class="bg-white rounded-lg shadow-sm p-6 border">
+        <div class="flex justify-between items-center mb-4">
+            <h2 class="text-lg font-semibold">基本信息</h2>
+            <button id="edit-btn" onclick="toggleEdit()" class="text-sm text-indigo-600 hover:underline">编辑资料</button>
+        </div>
+
+        {# 展示模式 #}
+        <div id="view-mode" class="space-y-3 text-sm">
+            <div class="flex justify-between"><span class="text-gray-500">用户名</span><span>{{ user.username }}</span></div>
+            <div class="flex justify-between"><span class="text-gray-500">邮箱</span><span>{{ user.email }}</span></div>
+            <div class="flex justify-between"><span class="text-gray-500">手机</span><span>{{ user.phone or '未填写' }}</span></div>
+            <div class="flex justify-between"><span class="text-gray-500">姓名</span><span>{{ user.real_name or '未填写' }}</span></div>
+            <div class="flex justify-between"><span class="text-gray-500">地址</span><span>{{ user.address or '未填写' }}</span></div>
+            <div class="flex justify-between"><span class="text-gray-500">注册时间</span><span>{{ user.created_at.strftime('%Y-%m-%d %H:%M') }}</span></div>
+        </div>
+
+        {# 编辑模式 #}
+        <div id="edit-mode" class="hidden space-y-3">
+            <div>
+                <label class="block text-xs text-gray-500 mb-1">邮箱</label>
+                <div class="flex space-x-2">
+                    <input type="email" id="ed-email" value="{{ user.email }}" class="flex-1 px-3 py-2 border rounded-lg text-sm" oninput="onEmailChange()">
+                    <button id="send-code-btn" onclick="sendEmailCode()" class="hidden shrink-0 bg-green-600 text-white px-3 py-2 rounded-lg text-sm hover:bg-green-700 whitespace-nowrap">发送验证码</button>
+                </div>
+            </div>
+            <div id="code-row" class="hidden">
+                <label class="block text-xs text-gray-500 mb-1">验证码</label>
+                <input type="text" id="ed-email-code" maxlength="6" class="w-40 px-3 py-2 border rounded-lg text-sm" placeholder="6位数字">
+            </div>
+            <div>
+                <label class="block text-xs text-gray-500 mb-1">手机</label>
+                <input type="text" id="ed-phone" value="{{ user.phone or '' }}" class="w-full px-3 py-2 border rounded-lg text-sm">
+            </div>
+            <div>
+                <label class="block text-xs text-gray-500 mb-1">姓名</label>
+                <input type="text" id="ed-real_name" value="{{ user.real_name or '' }}" class="w-full px-3 py-2 border rounded-lg text-sm">
+            </div>
+            <div>
+                <label class="block text-xs text-gray-500 mb-1">地址</label>
+                <input type="text" id="ed-address" value="{{ user.address or '' }}" class="w-full px-3 py-2 border rounded-lg text-sm">
+            </div>
+            <div class="flex space-x-2 pt-2">
+                <button onclick="saveProfile()" id="save-btn" class="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-indigo-700">保存</button>
+                <button onclick="toggleEdit()" class="bg-gray-200 text-gray-700 px-4 py-2 rounded-lg text-sm hover:bg-gray-300">取消</button>
+            </div>
+            <div id="profile-msg"></div>
+        </div>
+    </div>
+
+    {# ===== 账户信息 ===== #}
+    <div class="bg-white rounded-lg shadow-sm p-6 border">
+        <h2 class="text-lg font-semibold mb-4">账户信息</h2>
+        <div class="space-y-3 text-sm">
+            <div class="flex justify-between"><span class="text-gray-500">余额</span><span class="font-bold text-indigo-600">¥{{ "%.2f"|format(user.balance) }}</span></div>
+            <div class="flex justify-between"><span class="text-gray-500">月租到期</span><span>{{ user.expire_date.strftime('%Y-%m-%d') if user.expire_date else '未设置' }}</span></div>
+            <div class="flex justify-between"><span class="text-gray-500">实名状态</span><span class="{{ 'text-green-600' if user.is_verified else 'text-yellow-500' }}">{{ '已认证' if user.is_verified else '未认证' }}</span></div>
+        </div>
+    </div>
+
+    {# ===== 修改密码 ===== #}
+    <div class="bg-white rounded-lg shadow-sm p-6 border">
+        <h2 class="text-lg font-semibold mb-4">修改密码</h2>
+        <div class="space-y-3">
+            <div>
+                <label class="block text-xs text-gray-500 mb-1">新密码</label>
+                <input type="password" id="pw-new" minlength="6" class="w-full px-3 py-2 border rounded-lg text-sm" placeholder="至少6位">
+            </div>
+            <div>
+                <label class="block text-xs text-gray-500 mb-1">确认密码</label>
+                <input type="password" id="pw-confirm" minlength="6" class="w-full px-3 py-2 border rounded-lg text-sm" placeholder="再次输入">
+            </div>
+            <button onclick="changePassword()" id="pw-btn" class="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-indigo-700">修改密码</button>
+            <div id="pw-msg"></div>
+        </div>
+    </div>
+
+    {# ===== 实名认证 ===== #}
+    {% if not user.is_verified %}
+    <div class="bg-white rounded-lg shadow-sm p-6 border">
+        <h2 class="text-lg font-semibold mb-4">实名认证</h2>
+        <form onsubmit="submitIdentity(); return false;">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div><label class="block text-sm font-medium text-gray-700 mb-1">真实姓名</label>
+                    <input type="text" id="real_name" required class="w-full px-3 py-2 border rounded-lg"></div>
+                <div><label class="block text-sm font-medium text-gray-700 mb-1">身份证号</label>
+                    <input type="text" id="id_card_number" required class="w-full px-3 py-2 border rounded-lg"></div>
+            </div>
+            <p class="text-xs text-gray-400 mt-2">提交后由客服人工审核</p>
+            <button type="submit" class="mt-4 bg-indigo-600 text-white px-6 py-2 rounded-lg text-sm hover:bg-indigo-700">提交认证</button>
+        </form>
+        <div id="identity-result" class="mt-3"></div>
+    </div>
+    {% endif %}
+
+</div>
+
+<script>
+var editing = false;
+var originalEmail = '{{ user.email }}';
+
+function toggleEdit() {
+    editing = !editing;
+    document.getElementById('view-mode').classList.toggle('hidden', editing);
+    document.getElementById('edit-mode').classList.toggle('hidden', !editing);
+    document.getElementById('edit-btn').textContent = editing ? '取消编辑' : '编辑资料';
+    document.getElementById('profile-msg').innerHTML = '';
+    // 恢复初始状态
+    if (!editing) {
+        document.getElementById('ed-email').value = originalEmail;
+        document.getElementById('send-code-btn').classList.add('hidden');
+        document.getElementById('code-row').classList.add('hidden');
+        document.getElementById('ed-email-code').value = '';
+    }
+}
+
+function onEmailChange() {
+    var newEmail = document.getElementById('ed-email').value.trim();
+    var changed = newEmail !== originalEmail;
+    document.getElementById('send-code-btn').classList.toggle('hidden', !changed);
+    document.getElementById('code-row').classList.toggle('hidden', !changed);
+    if (!changed) {
+        document.getElementById('ed-email-code').value = '';
+    }
+}
+
+function sendEmailCode() {
+    var email = document.getElementById('ed-email').value.trim();
+    if (!email) { alert('请输入邮箱'); return; }
+    var btn = document.getElementById('send-code-btn');
+    btn.disabled = true; btn.textContent = '发送中...';
+    App.post('/api/v1/users/me/send-email-code', {email: email}).then(function(data) {
+        if (data.code === 0) {
+            btn.textContent = '已发送';
+            btn.classList.remove('bg-green-600', 'hover:bg-green-700');
+            btn.classList.add('bg-gray-400');
+            // 60秒后可重发
+            var sec = 60;
+            var t = setInterval(function() {
+                sec--;
+                if (sec <= 0) {
+                    clearInterval(t);
+                    btn.disabled = false; btn.textContent = '重新发送';
+                    btn.classList.remove('bg-gray-400');
+                    btn.classList.add('bg-green-600', 'hover:bg-green-700');
+                } else {
+                    btn.textContent = sec + 's';
+                }
+            }, 1000);
+        } else {
+            alert(data.message);
+            btn.disabled = false;
+        }
+    });
+}
+
+function saveProfile() {
+    var btn = document.getElementById('save-btn');
+    btn.disabled = true; btn.textContent = '保存中...';
+    var body = {
+        email: document.getElementById('ed-email').value.trim(),
+        phone: document.getElementById('ed-phone').value.trim() || null,
+        real_name: document.getElementById('ed-real_name').value.trim() || null,
+        address: document.getElementById('ed-address').value.trim() || null
+    };
+    // 如果邮箱改了，带上验证码
+    if (body.email !== originalEmail) {
+        body.email_code = document.getElementById('ed-email-code').value.trim();
+    }
+    App.put('/api/v1/users/me', body).then(function(data) {
+        var el = document.getElementById('profile-msg');
+        if (data.code === 0) {
+            el.innerHTML = '<div class="text-green-600 text-sm mt-2">保存成功，刷新页面生效</div>';
+            originalEmail = body.email;
+            document.getElementById('send-code-btn').classList.add('hidden');
+            document.getElementById('code-row').classList.add('hidden');
+            document.getElementById('ed-email-code').value = '';
+            setTimeout(function() { location.reload(); }, 1000);
+        } else {
+            el.innerHTML = '<div class="text-red-500 text-sm mt-2">' + data.message + '</div>';
+        }
+        btn.disabled = false; btn.textContent = '保存';
+    });
+}
+
+function changePassword() {
+    var pw = document.getElementById('pw-new').value;
+    var pwc = document.getElementById('pw-confirm').value;
+    var el = document.getElementById('pw-msg');
+    if (!pw) { el.innerHTML = '<div class="text-red-500 text-sm mt-2">请输入新密码</div>'; return; }
+    if (pw !== pwc) { el.innerHTML = '<div class="text-red-500 text-sm mt-2">两次密码不一致</div>'; return; }
+    var btn = document.getElementById('pw-btn');
+    btn.disabled = true; btn.textContent = '修改中...';
+    App.put('/api/v1/users/me', {password: pw}).then(function(data) {
+        if (data.code === 0) {
+            el.innerHTML = '<div class="text-green-600 text-sm mt-2">密码修改成功</div>';
+            document.getElementById('pw-new').value = '';
+            document.getElementById('pw-confirm').value = '';
+        } else {
+            el.innerHTML = '<div class="text-red-500 text-sm mt-2">' + data.message + '</div>';
+        }
+        btn.disabled = false; btn.textContent = '修改密码';
+    });
+}
+
+{% if not user.is_verified %}
+function submitIdentity() {
+    App.put('/api/v1/users/me/identity', {
+        real_name: document.getElementById('real_name').value,
+        id_card_number: document.getElementById('id_card_number').value,
+        id_card_front_url: '/static/upload/pending.jpg',
+        id_card_back_url: '/static/upload/pending.jpg'
+    }).then(function(data) {
+        var el = document.getElementById('identity-result');
+        el.innerHTML = data.code === 0 ? '<div class="text-green-600 text-sm">已提交，等待审核</div>' : '<div class="text-red-500 text-sm">' + data.message + '</div>';
+    });
+}
+{% endif %}
+</script>
+{% endblock %}

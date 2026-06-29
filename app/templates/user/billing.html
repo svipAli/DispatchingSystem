@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}消费记录 - {{ settings.APP_NAME }}{% endblock %}
+{% block content %}
+<h1 class="text-2xl font-bold mb-6">消费记录</h1>
+<div class="flex space-x-2 mb-4">
+    <button onclick="loadBilling('')" class="px-3 py-1 text-sm rounded-full bg-gray-200 hover:bg-gray-300">全部</button>
+    <button onclick="loadBilling('recharge')" class="px-3 py-1 text-sm rounded-full bg-green-100 text-green-700 hover:bg-green-200">充值</button>
+    <button onclick="loadBilling('deduct')" class="px-3 py-1 text-sm rounded-full bg-red-100 text-red-700 hover:bg-red-200">扣费</button>
+</div>
+<div id="billing-list"><div class="text-center text-gray-400 py-12">加载中...</div></div>
+<div id="pagination" class="mt-4"></div>
+<script>
+var labels = {recharge: '充值', deduct: '扣费', refund: '退款'}, currentType = '', currentPage = 1;
+function loadBilling(type, page) {
+    page = page || 1; currentPage = page;
+    if (type !== undefined && type !== '') currentType = type;
+    else if (typeof type === 'number') { /* pagination call, use stored type */ }
+    var url = '/api/v1/billing?page=' + page + '&page_size=20';
+    if (currentType) url += '&type=' + currentType;
+    App.get(url).then(function(data) {
+        var el = document.getElementById('billing-list');
+        if (!data.data || !data.data.items.length) { el.innerHTML = '<div class="text-center text-gray-400 py-12">暂无消费记录</div>'; document.getElementById('pagination').innerHTML=''; return; }
+        var html = '';
+        data.data.items.forEach(function(r) {
+            var sign = r.type === 'recharge' ? '+' : '-';
+            html += '<div class="bg-white rounded-lg shadow-sm p-4 border flex justify-between items-center mb-2">' +
+                '<div><span class="text-xs px-2 py-0.5 rounded ' + (r.type==='recharge'?'bg-green-100 text-green-700':r.type==='refund'?'bg-blue-100 text-blue-700':'bg-red-100 text-red-700') + '">' + (labels[r.type]||r.type) + '</span>' +
+                (r.remark ? '<span class="text-sm text-gray-500 ml-2">' + r.remark + '</span>' : '') +
+                '<div class="text-xs text-gray-400 mt-1">' + new Date(r.created_at).toLocaleString() + '</div></div>' +
+                '<div><span class="font-medium ' + (r.type==='recharge'?'text-green-600':'text-red-600') + '">' + sign + '¥' + r.amount.toFixed(2) + '</span>' +
+                '<div class="text-xs text-gray-400 text-right">余额: ¥' + r.balance_after.toFixed(2) + '</div></div></div>';
+        });
+        el.innerHTML = html;
+        App.pagination(data.data.total, page, data.data.page_size, 'pagination', 'loadBilling');
+    });
+}
+loadBilling('', 1);
+</script>
+{% endblock %}

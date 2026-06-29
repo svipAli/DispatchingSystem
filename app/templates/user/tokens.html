@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block title %}API Token - {{ settings.APP_NAME }}{% endblock %}
+{% block content %}
+<div class="flex justify-between items-center mb-6">
+    <h1 class="text-2xl font-bold">API Token</h1>
+    <button onclick="openCreateModal()" class="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-indigo-700">创建新 Token</button>
+</div>
+<div class="text-xs text-gray-400 mb-4">用于 Dify 等 MCP 客户端连接平台，默认有效期 90 天，撤销后立即失效。</div>
+<div id="token-list" class="space-y-4"><div class="text-center text-gray-400 py-12">加载中...</div></div>
+<div id="pagination" class="mt-4"></div>
+
+<div id="create-modal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 hidden">
+    <div class="bg-white rounded-xl p-6 w-full max-w-md mx-4">
+        <h2 class="text-lg font-bold mb-4">创建 API Token</h2>
+        <form onsubmit="doCreateToken(); return false;">
+            <input type="text" id="token-name" placeholder="Token 名称，如：Dify生产环境" required class="w-full px-3 py-2 border rounded-lg mb-4">
+            <div class="flex justify-end space-x-2">
+                <button type="button" onclick="closeCreateModal()" class="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg">取消</button>
+                <button type="submit" class="px-4 py-2 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">创建</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div id="result-modal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 hidden">
+    <div class="bg-white rounded-xl p-6 w-full max-w-lg mx-4">
+        <h2 class="text-lg font-bold mb-2">Token 创建成功</h2>
+        <p class="text-sm text-red-500 mb-3">请立即复制保存，关闭后无法再次查看！</p>
+        <textarea id="result-token" readonly rows="6" class="w-full px-3 py-2 border rounded-lg text-xs font-mono break-all bg-gray-50" onclick="this.select()"></textarea>
+        <div class="flex justify-end mt-3">
+            <button onclick="copyToken()" class="px-4 py-2 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 mr-2">复制</button>
+            <button onclick="closeResultModal()" class="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg">关闭</button>
+        </div>
+    </div>
+</div>
+
+<script>
+function loadTokens() {
+    App.get('/api/v1/api-tokens').then(function(data) {
+        var el = document.getElementById('token-list');
+        if (!data.data || !data.data.items.length) { el.innerHTML = '<div class="text-center text-gray-400 py-12">暂无 Token</div>'; return; }
+        var html = '';
+        data.data.items.forEach(function(t) {
+            var expiresText = t.expires_at ? new Date(t.expires_at).toLocaleDateString() : '永不过期';
+            html += '<div class="bg-white rounded-lg shadow-sm p-4 border flex justify-between items-center">' +
+                '<div><div class="font-medium">' + t.name + '</div>' +
+                '<div class="text-xs text-gray-400 mt-1">有效期至 ' + expiresText + ' · 创建于 ' + new Date(t.created_at).toLocaleString() + '</div>' +
+                '<div class="text-xs text-gray-300 font-mono mt-0.5 truncate max-w-sm">jti: ' + t.jti + '</div></div>' +
+                '<button onclick="revokeToken(' + t.id + ')" class="text-red-500 text-sm hover:text-red-700 shrink-0 ml-2">撤销</button></div>';
+        });
+        el.innerHTML = html;
+    });
+}
+
+function openCreateModal() { document.getElementById('create-modal').classList.remove('hidden'); }
+function closeCreateModal() { document.getElementById('create-modal').classList.add('hidden'); document.getElementById('token-name').value = ''; }
+function closeResultModal() { document.getElementById('result-modal').classList.add('hidden'); loadTokens(); }
+function copyToken() {
+    var token = document.getElementById('result-token').value;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(token).then(function() { alert('已复制'); }).catch(function() { fallbackCopy(); });
+    } else {
+        fallbackCopy();
+    }
+    function fallbackCopy() {
+        var ta = document.getElementById('result-token');
+        ta.select();
+        document.execCommand('copy');
+        alert('已复制');
+    }
+}
+
+function doCreateToken() {
+    var name = document.getElementById('token-name').value;
+    if (!name) return;
+    App.post('/api/v1/api-tokens', {name: name}).then(function(d) {
+        if (d.code === 0) {
+            closeCreateModal();
+            document.getElementById('result-token').value = d.data.token;
+            document.getElementById('result-modal').classList.remove('hidden');
+        } else {
+            alert(d.message);
+        }
+    });
+}
+
+function revokeToken(id) {
+    App.modal.confirm('撤销 Token', '确定要撤销这个 Token 吗？撤销后立即失效，无法恢复。', function() {
+        App.del('/api/v1/api-tokens/' + id).then(function() { loadTokens(); });
+    });
+}
+
+loadTokens();
+</script>
+{% endblock %}

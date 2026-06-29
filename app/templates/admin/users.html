@@ -1,0 +1,228 @@
+{% extends "base.html" %}
+{% block title %}用户管理 - {{ settings.APP_NAME }}{% endblock %}
+{% block content %}
+<h1 class="text-2xl font-bold mb-4">用户管理</h1>
+
+<div class="flex flex-wrap items-center gap-2 mb-4">
+    <input type="text" id="search-input" placeholder="搜索用户名、邮箱..." class="px-3 py-2 border rounded-lg text-sm w-48">
+    <select id="filter-status" class="px-3 py-2 border rounded-lg text-sm">
+        <option value="">全部状态</option>
+        <option value="true">启用</option>
+        <option value="false">禁用</option>
+    </select>
+    <input type="date" id="filter-from" class="px-3 py-2 border rounded-lg text-sm w-36" title="创建时间从">
+    <span class="text-xs text-gray-400">至</span>
+    <input type="date" id="filter-to" class="px-3 py-2 border rounded-lg text-sm w-36" title="创建时间至">
+    <button onclick="searchData()" class="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm hover:bg-indigo-700">搜索</button>
+    <button onclick="clearSearch()" id="clear-btn" class="px-4 py-2 text-sm text-gray-500 hover:underline hidden">清除</button>
+</div>
+
+<div class="flex justify-between items-center mb-4">
+    <div id="pagination-top"></div>
+    <button onclick="addUser()" class="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-indigo-700">新增用户</button>
+</div>
+<div id="user-list"><div class="text-center text-gray-400 py-12">加载中...</div></div>
+<div id="pagination-bottom" class="mt-4"></div>
+
+<script>
+var currentPage = 1;
+
+function loadUsers(page, keyword, status, dateFrom, dateTo) {
+    page = page || 1;
+    currentPage = page;
+    var params = new URLSearchParams();
+    params.set('page', page);
+    params.set('page_size', '10');
+    if (keyword) params.set('keyword', keyword);
+    if (status !== undefined && status !== null && status !== '') params.set('status', status);
+    if (dateFrom) params.set('date_from', dateFrom);
+    if (dateTo) params.set('date_to', dateTo);
+    App.get('/api/v1/users?' + params.toString()).then(function (data) {
+        var el = document.getElementById('user-list');
+        if (!data.data || !data.data.items.length) { el.innerHTML = '<div class="text-center text-gray-400 py-12">暂无用户</div>'; return; }
+
+        var html = '<table class="w-full text-sm bg-white rounded-lg shadow-sm border"><thead class="bg-gray-50"><tr>' +
+            '<th class="px-4 py-3 text-left">ID</th><th class="px-4 py-3 text-left">用户名</th>' +
+            '<th class="px-4 py-3 text-left">邮箱</th><th class="px-4 py-3 text-left">余额</th>' +
+            '<th class="px-4 py-3 text-left">实名</th><th class="px-4 py-3 text-left">状态</th>' +
+            '<th class="px-4 py-3 text-left">操作</th></tr></thead><tbody>';
+        data.data.items.forEach(function (u) {
+            html += '<tr class="border-t">' +
+                '<td class="px-4 py-3">' + u.id + '</td>' +
+                '<td class="px-4 py-3 font-medium">' + u.username + '</td>' +
+                '<td class="px-4 py-3 text-xs">' + u.email + '</td>' +
+                '<td class="px-4 py-3">¥' + u.balance.toFixed(2) + '</td>' +
+                '<td class="px-4 py-3">' + (u.is_verified ? '<span class="text-green-600">已认证</span>' : '<span class="text-yellow-500">未认证</span>') + '</td>' +
+                '<td class="px-4 py-3">' + (u.status ? '<span class="text-green-600">正常</span>' : '<span class="text-red-500">禁用</span>') + '</td>' +
+                '<td class="px-4 py-3">' +
+                '<button onclick="editUser(' + u.id + ')" class="text-indigo-600 text-xs mr-2 hover:underline">编辑</button>' +
+                '<button onclick="rechargeUser(' + u.id + ',\'' + u.username + '\')" class="text-green-600 text-xs mr-2 hover:underline">充值</button>' +
+                '<button onclick="toggleUser(' + u.id + ',' + u.status + ',\'' + u.username + '\')" class="text-xs mr-2 hover:underline ' + (u.status ? 'text-red-500' : 'text-green-500') + '">' + (u.status ? '禁用' : '启用') + '</button>' +
+                '<button onclick="deleteUser(' + u.id + ',\'' + u.username + '\')" class="text-red-500 text-xs hover:underline">删除</button>' +
+                '</td></tr>';
+        });
+        html += '</tbody></table>';
+        el.innerHTML = html;
+
+        // 分页
+        var totalPages = Math.ceil(data.data.total / data.data.page_size);
+        var pg = '<div class="flex items-center space-x-1 text-sm">';
+        pg += '<span class="text-gray-500 mr-2">共 ' + data.data.total + ' 条，第 ' + data.data.page + '/' + totalPages + ' 页</span>';
+        for (var i = 1; i <= totalPages; i++) {
+            pg += '<button onclick="loadUsers(' + i + ')" class="px-3 py-1 rounded ' + (i === page ? 'bg-indigo-600 text-white' : 'bg-gray-200 hover:bg-gray-300') + '">' + i + '</button>';
+        }
+        pg += '</div>';
+        document.getElementById('pagination-top').innerHTML = pg;
+        document.getElementById('pagination-bottom').innerHTML = pg;
+    });
+}
+
+// ===== 新增用户 =====
+function addUser() {
+    App.modal.form('新增用户',
+        '<div class="grid grid-cols-2 gap-3">' +
+        '<div><label class="text-xs text-gray-500">用户名 *</label><input id="mu-username" class="w-full px-3 py-2 border rounded-lg"></div>' +
+        '<div><label class="text-xs text-gray-500">邮箱 *</label><input id="mu-email" class="w-full px-3 py-2 border rounded-lg"></div>' +
+        '<div><label class="text-xs text-gray-500">密码 *</label><input id="mu-password" type="password" class="w-full px-3 py-2 border rounded-lg"></div>' +
+        '<div><label class="text-xs text-gray-500">手机号</label><input id="mu-phone" class="w-full px-3 py-2 border rounded-lg"></div>' +
+        '<div><label class="text-xs text-gray-500">余额</label><input id="mu-balance" type="number" value="0" step="0.01" class="w-full px-3 py-2 border rounded-lg"></div>' +
+        '<div><label class="text-xs text-gray-500">月租到期</label><input id="mu-expire" type="date" class="w-full px-3 py-2 border rounded-lg"></div>' +
+        '</div>',
+        function () {
+            var data = {
+                username: document.getElementById('mu-username').value,
+                email: document.getElementById('mu-email').value,
+                password: document.getElementById('mu-password').value,
+                phone: document.getElementById('mu-phone').value || null
+            };
+            if (!data.username || !data.email || !data.password) { App.modal.alert('提示', '用户名、邮箱、密码为必填'); return; }
+            App.post('/api/v1/users/register', data).then(function (d) {
+                if (d.code === 0) {
+                    // 如果有余额或到期时间，再更新
+                    var bal = document.getElementById('mu-balance').value;
+                    var exp = document.getElementById('mu-expire').value;
+                    if (bal > 0 || exp) {
+                        var uid = d.data.user.id;
+                        App.put('/api/v1/users/' + uid, { balance: parseFloat(bal)||0 }).then(function() { loadUsers(currentPage); });
+                    }
+                    App.modal.alert('成功', '用户创建成功'); loadUsers(currentPage);
+                } else { App.modal.alert('错误', d.message); }
+            });
+        }
+    );
+}
+
+// ===== 编辑用户（加载完整数据） =====
+function editUser(id) {
+    // 先获取用户完整数据
+    App.get('/api/v1/users/' + id).then(function (r) {
+        var u = r.data;
+        var expiresAt = u.expire_date ? u.expire_date.split('T')[0] : '';
+        App.modal.form('编辑用户 - ' + u.username,
+            '<div class="grid grid-cols-2 gap-3" style="max-height:60vh;overflow-y:auto">' +
+            '<div><label class="text-xs text-gray-500">用户名</label><input id="me-username" value="' + (u.username||'') + '" class="w-full px-3 py-2 border rounded-lg"></div>' +
+            '<div><label class="text-xs text-gray-500">邮箱</label><input id="me-email" value="' + (u.email||'') + '" class="w-full px-3 py-2 border rounded-lg"></div>' +
+            '<div><label class="text-xs text-gray-500">新密码</label><input id="me-password" type="password" placeholder="留空不修改" class="w-full px-3 py-2 border rounded-lg"></div>' +
+            '<div><label class="text-xs text-gray-500">手机号</label><input id="me-phone" value="' + (u.phone||'') + '" class="w-full px-3 py-2 border rounded-lg"></div>' +
+            '<div><label class="text-xs text-gray-500">余额</label><input id="me-balance" type="number" value="' + (u.balance||0) + '" step="0.01" class="w-full px-3 py-2 border rounded-lg"></div>' +
+            '<div><label class="text-xs text-gray-500">月租到期</label><input id="me-expire" type="date" value="' + expiresAt + '" class="w-full px-3 py-2 border rounded-lg"></div>' +
+            '<div><label class="text-xs text-gray-500">真实姓名</label><input id="me-realname" value="' + (u.real_name||'') + '" class="w-full px-3 py-2 border rounded-lg"></div>' +
+            '<div><label class="text-xs text-gray-500">身份证号</label><input id="me-idcard" value="' + (u.id_card_number||'') + '" class="w-full px-3 py-2 border rounded-lg"></div>' +
+            '<div><label class="text-xs text-gray-500">地址</label><input id="me-address" value="' + (u.address||'') + '" class="w-full px-3 py-2 border rounded-lg"></div>' +
+            '<div><label class="text-xs text-gray-500">实名认证</label><select id="me-verified" class="w-full px-3 py-2 border rounded-lg"><option value="0" ' + (u.is_verified?'':'selected') + '>未认证</option><option value="1" ' + (u.is_verified?'selected':'') + '>已认证</option></select></div>' +
+            '</div>',
+            function () {
+                var updateData = {};
+                updateData.username = document.getElementById('me-username').value;
+                updateData.email = document.getElementById('me-email').value;
+                updateData.phone = document.getElementById('me-phone').value || null;
+                updateData.balance = parseFloat(document.getElementById('me-balance').value) || 0;
+                updateData.real_name = document.getElementById('me-realname').value || null;
+                updateData.address = document.getElementById('me-address').value || null;
+                updateData.id_card_number = document.getElementById('me-idcard').value || null;
+                updateData.is_verified = document.getElementById('me-verified').value === '1';
+                var expireVal = document.getElementById('me-expire').value;
+                if (expireVal) updateData.expire_date = expireVal;
+                var pwd = document.getElementById('me-password').value;
+                if (pwd) updateData.password = pwd;
+
+                if (!updateData.username || !updateData.email) { App.modal.alert('提示', '用户名和邮箱不能为空'); return; }
+
+                App.put('/api/v1/users/' + id, updateData).then(function (d) {
+                    if (d.code === 0) { App.modal.alert('成功', '用户信息已更新'); loadUsers(currentPage); }
+                    else { App.modal.alert('错误', d.message); }
+                });
+            }
+        );
+    });
+}
+
+// ===== 充值 =====
+function rechargeUser(id, username) {
+    App.modal.form('充值 - ' + username,
+        '<div class="space-y-3">' +
+        '<label class="text-xs text-gray-500">充值金额（元）</label><input id="mr-amount" type="number" step="0.01" min="0.01" class="w-full px-3 py-2 border rounded-lg">' +
+        '<label class="text-xs text-gray-500">备注</label><input id="mr-remark" placeholder="充值备注" class="w-full px-3 py-2 border rounded-lg">' +
+        '</div>',
+        function () {
+            var amount = parseFloat(document.getElementById('mr-amount').value);
+            var remark = document.getElementById('mr-remark').value;
+            if (!amount || amount <= 0) { App.modal.alert('提示', '请输入有效的充值金额'); return; }
+            App.post('/api/v1/recharges', { user_id: id, amount: amount, remark: remark }).then(function (d) {
+                if (d.code === 0) {
+                    var oid = d.data.id;
+                    App.modal.confirm('确认充值', '确定完成这笔 ¥' + amount + ' 的充值吗？', function () {
+                        App.post('/api/v1/recharges/' + oid + '/complete', {}).then(function (r) {
+                            if (r.code === 0) { App.modal.alert('成功', '充值已完成'); loadUsers(currentPage); }
+                            else { App.modal.alert('错误', r.message); }
+                        });
+                    });
+                } else { App.modal.alert('错误', d.message); }
+            });
+        }
+    );
+}
+
+// ===== 启用/禁用 =====
+function toggleUser(id, currentStatus, username) {
+    var action = currentStatus ? '禁用' : '启用';
+    App.modal.confirm(action + '用户', '确定要' + action + '用户「' + username + '」吗？', function () {
+        App.put('/api/v1/users/' + id + '/status', {}).then(function (d) {
+            if (d.code === 0) { App.modal.alert('成功', '用户已' + action); loadUsers(currentPage); }
+            else { App.modal.alert('错误', d.message); }
+        });
+    });
+}
+
+// ===== 删除用户 =====
+function deleteUser(id, username) {
+    App.modal.confirm('删除用户', '确定要删除用户「' + username + '」吗？此操作不可撤销。', function () {
+        App.del('/api/v1/users/' + id).then(function (d) {
+            if (d.code === 0) { App.modal.alert('成功', '用户已删除'); loadUsers(currentPage); }
+            else { App.modal.alert('错误', d.message); }
+        });
+    });
+}
+
+// 还需要给 admin 编辑接口加上 GET /users/{id}
+// 同时也需要处理 expire_date 和 password 的更新
+
+function searchData() {
+    var kw = document.getElementById('search-input').value.trim();
+    var st = document.getElementById('filter-status').value;
+    var df = document.getElementById('filter-from').value;
+    var dt = document.getElementById('filter-to').value;
+    document.getElementById('clear-btn').classList.toggle('hidden', !(kw || st || df || dt));
+    loadUsers(1, kw || undefined, st || undefined, df || undefined, dt || undefined);
+}
+function clearSearch() {
+    document.getElementById('search-input').value = '';
+    document.getElementById('filter-status').value = '';
+    document.getElementById('filter-from').value = '';
+    document.getElementById('filter-to').value = '';
+    document.getElementById('clear-btn').classList.add('hidden');
+    loadUsers(1);
+}
+loadUsers(1);
+</script>
+{% endblock %}

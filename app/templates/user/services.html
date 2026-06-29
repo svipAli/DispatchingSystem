@@ -1,0 +1,176 @@
+{% extends "base.html" %}
+{% block title %}服务市场 - {{ settings.APP_NAME }}{% endblock %}
+{% block content %}
+<h1 class="text-2xl font-bold mb-6">服务市场</h1>
+<div id="service-list" class="grid grid-cols-1 md:grid-cols-3 gap-6">
+    <div class="text-center text-gray-400 py-12 col-span-3">加载中...</div>
+</div>
+<div id="pagination" class="mt-4 flex justify-center"></div>
+<script>
+var servicesData = {}, nodeNames = {}, currentPage = 1;
+
+App.get('/api/v1/mcp-nodes?page_size=100').then(function(nd) {
+    if (nd.data && nd.data.items) nd.data.items.forEach(function(n) { nodeNames[n.id] = n.name; });
+});
+
+function loadServices(page) {
+    page = page || 1; currentPage = page;
+    App.get('/api/v1/mcp-services?is_verified=true&status=true&page=' + page + '&page_size=9').then(function(data) {
+        var el = document.getElementById('service-list');
+        if (!data.data || !data.data.items.length) {
+            el.innerHTML = '<div class="text-center text-gray-400 py-12 col-span-3">暂无可用服务</div>';
+            document.getElementById('pagination').innerHTML = '';
+            return;
+        }
+        var seen = {}, unique = [];
+        data.data.items.forEach(function(s) {
+            if (!seen[s.service_type]) { seen[s.service_type] = true; unique.push(s); }
+            if (!servicesData[s.service_type]) servicesData[s.service_type] = [];
+            servicesData[s.service_type].push(s);
+        });
+        var html = '';
+        unique.forEach(function(s) {
+            html += '<div class="bg-white rounded-lg shadow-sm p-6 border">' +
+                '<h3 class="font-semibold text-lg mb-2">' + s.service_name + '</h3>' +
+                '<p class="text-sm text-gray-500 mb-2">类型：' + s.service_type + '</p>' +
+                '<p class="text-2xl font-bold text-indigo-600 mb-4">¥' + s.price_per_call.toFixed(2) + '<span class="text-sm text-gray-400"> /次</span></p>' +
+                '<button onclick="openTaskModal(\'' + s.service_type + '\')" class="w-full bg-indigo-600 text-white py-2 rounded-lg hover:bg-indigo-700 transition text-sm">立即调用</button>' +
+                '</div>';
+        });
+        el.innerHTML = html;
+        App.pagination(data.data.total, currentPage, data.data.page_size, 'pagination', 'loadServices');
+    });
+}
+loadServices(1);
+
+function openTaskModal(serviceType) {
+    var allNodes = servicesData[serviceType] || [];
+    if (!allNodes.length) return;
+    var first = allNodes[0];
+    var params = first.params || [];
+
+    // 构建服务搜索下拉（所有可用服务）
+    var svcOptions = '';
+    Object.keys(servicesData).forEach(function(st) {
+        var nodes = servicesData[st];
+        if (!nodes || !nodes.length) return;
+        var s = nodes[0];
+        svcOptions += '<option value="' + st + '" ' + (st===serviceType?'selected':'') + '>' + s.service_name + ' (' + st + ') - ¥' + s.price_per_call + '</option>';
+    });
+
+    // 节点选项
+    var nodeOpts = '<option value="">随机分配</option>';
+    allNodes.forEach(function(s) {
+        var nname = nodeNames[s.node_id] || ('节点 ' + s.node_id);
+        nodeOpts += '<option value="' + s.node_id + '">【' + s.node_id + '】' + nname + ' - ¥' + s.price_per_call.toFixed(2) + '</option>';
+    });
+
+    App.modal.form('提交任务',
+        '<div class="text-xs text-gray-500 mb-1">选择服务（可输入搜索）</div>' +
+        '<div class="relative mb-3" id="svc-search-wrap">' +
+        '<input id="ts-svc-search" class="w-full px-3 py-2 border rounded-lg text-sm" placeholder="搜索服务名称或类型..." autocomplete="off" oninput="filterSvcOptions()" onfocus="filterSvcOptions()" value="' + (first.service_name + ' (' + first.service_type + ')') + '">' +
+        '<select id="ts-svc-select" size="4" class="w-full border rounded-b-lg text-sm hidden absolute z-10 bg-white shadow-lg"></select>' +
+        '</div>' +
+        '<div class="text-xs text-gray-500 mb-1">选择节点</div>' +
+        '<select id="ts-node" class="w-full px-3 py-2 border rounded-lg mb-3 text-sm">' + nodeOpts + '</select>' +
+        (params.length ? '<div id="ts-params" class="space-y-3">' + generateParamForm(params) + '</div>' : '<div class="text-xs text-gray-400">该服务无需参数</div>'),
+        function() {
+            var st = document.getElementById('ts-svc-select').value || serviceType;
+            if (!st) { App.modal.alert('提示', '请选择服务'); return; }
+            var input = {};
+            var currentParams = (servicesData[st]&&servicesData[st][0]&&servicesData[st][0].params) || [];
+            var valid = true;
+            currentParams.forEach(function(p) {
+                var el = document.getElementById('tf_' + p.field);
+                if (!el) return;
+                var val = el.value.trim();
+                if (!val && p.required) { App.modal.alert('提示', '请填写「' + (p.label||p.field) + '」'); valid = false; return; }
+                if (!val) return;
+                if (p.type === 'int') val = parseInt(val);
+                else if (p.type === 'float') val = parseFloat(val);
+                else if (p.type === 'list' || p.type === 'dict') {
+                    try { val = JSON.parse(val); } catch(e) { App.modal.alert('错误', '「' + (p.label||p.field) + '」JSON格式错误'); valid = false; return; }
+                }
+                input[p.field] = val;
+            });
+            if (!valid) return;
+            App.post('/api/v1/tasks', {service_type: st, request_params: {input: input}}).then(function(data) {
+                if (data.code === 0) App.modal.alert('成功', '任务已提交！<a href=\"/tasks\">查看任务</a>');
+                else App.modal.alert('错误', data.message);
+            });
+        }
+    );
+    // 初始化服务搜索下拉
+    setTimeout(function() {
+        var sel = document.getElementById('ts-svc-select');
+        sel.innerHTML = svcOptions;
+        currentModalServiceType = serviceType;
+        currentModalNodeNames = {};
+        allNodes.forEach(function(s) { currentModalNodeNames[s.node_id] = s.service_name; });
+    }, 50);
+}
+
+var currentModalServiceType = '';
+var currentModalNodeNames = {};
+
+function filterSvcOptions() {
+    var kw = (document.getElementById('ts-svc-search').value || '').toLowerCase();
+    var sel = document.getElementById('ts-svc-select');
+    var opts = sel.querySelectorAll('option');
+    var hasMatch = false;
+    opts.forEach(function(opt) { var m = opt.textContent.toLowerCase().indexOf(kw) !== -1; opt.style.display = m ? '' : 'none'; if (m) hasMatch = true; });
+    sel.classList.toggle('hidden', !hasMatch || !kw);
+    sel.size = Math.min(hasMatch ? opts.length : 0, 5);
+    if (kw) sel.classList.remove('hidden');
+}
+
+// 点击下拉选项更新搜索框
+document.addEventListener('click', function(e) {
+    if (e.target.id === 'ts-svc-select') {
+        var sel = document.getElementById('ts-svc-select');
+        var opt = sel.options[sel.selectedIndex];
+        if (opt && opt.value) {
+            document.getElementById('ts-svc-search').value = opt.textContent;
+            sel.classList.add('hidden');
+            onServiceChangeInModal(opt.value);
+        }
+    }
+});
+
+function onServiceChangeInModal(st) {
+    var nodes = servicesData[st] || [];
+    if (!nodes.length) return;
+    var params = nodes[0].params || [];
+    var nodeSel = document.getElementById('ts-node');
+    nodeSel.innerHTML = '<option value="">随机分配</option>';
+    nodes.forEach(function(s) {
+        var nname = nodeNames[s.node_id] || ('节点 ' + s.node_id);
+        nodeSel.innerHTML += '<option value="' + s.node_id + '">' + nname + ' - ¥' + s.price_per_call.toFixed(2) + '</option>';
+    });
+    document.getElementById('ts-params').innerHTML = params.length ? '<div class="space-y-3">' + generateParamForm(params) + '</div>' : '<div class="text-xs text-gray-400">该服务无需参数</div>';
+    currentModalServiceType = st;
+}
+
+function generateParamForm(params) {
+    var html = '';
+    params.forEach(function(p) {
+        var req = p.required ? ' *' : '';
+        var inputHtml = '';
+        if (p.type === 'bool' || p.type === 'boolean') {
+            inputHtml = '<select id="tf_' + p.field + '" class="w-full px-3 py-2 border rounded-lg"><option value="true">是</option><option value="false">否</option></select>';
+        } else if (p.type === 'int' || p.type === 'float') {
+            inputHtml = '<input type="number" id="tf_' + p.field + '" step="' + (p.type==='float'?'any':'1') + '" class="w-full px-3 py-2 border rounded-lg">';
+        } else if (p.type === 'list' || p.type === 'array' || p.type === 'dict') {
+            inputHtml = '<textarea id="tf_' + p.field + '" rows="3" class="w-full px-3 py-2 border rounded-lg font-mono text-sm" placeholder=\'' + (p.type==='list'?'["a","b"]':'{"key":"value"}') + '\'></textarea>';
+        } else {
+            inputHtml = '<input type="text" id="tf_' + p.field + '" class="w-full px-3 py-2 border rounded-lg">';
+        }
+        html += '<div><label class="block text-xs text-gray-500 mb-1">' + (p.label || p.field) + req + '</label>' +
+            inputHtml +
+            (p.description ? '<p class="text-xs text-gray-400 mt-1">' + p.description + '</p>' : '') +
+            '</div>';
+    });
+    return html;
+}
+</script>
+{% endblock %}
