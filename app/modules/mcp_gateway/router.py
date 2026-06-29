@@ -343,6 +343,7 @@ async def _call_tool(session: MCPSession, params: dict) -> dict:
 
             if task and task.status == "completed":
                 return _tool_success({
+                    "status_code": 0,
                     "task_id": task.id,
                     "status": "completed",
                     "result": task.result,
@@ -350,13 +351,14 @@ async def _call_tool(session: MCPSession, params: dict) -> dict:
                 })
             else:
                 error_msg = getattr(task, 'error_message', None) if task else None
-                return _tool_error(error_msg or "任务执行失败")
+                return _tool_error(error_msg or "任务执行失败", status_code=-1)
 
     else:
         # 长任务：异步，立即返回 task_id，由 AI 用 query_task 轮询
         asyncio.create_task(run_dispatch(task_id, session.db_factory))
 
         return _tool_success({
+            "status_code": 1,
             "task_id": task_id,
             "status": "queued",
             "service_type": service_type,
@@ -380,6 +382,7 @@ async def _query_task(session: MCPSession, task_id: int) -> dict:
 
         if task.status == "completed":
             return _tool_success({
+                "status_code": 0,
                 "task_id": task.id,
                 "status": "completed",
                 "result": task.result,
@@ -388,12 +391,14 @@ async def _query_task(session: MCPSession, task_id: int) -> dict:
         elif task.status in ("failed", "cancelled"):
             return _tool_error(
                 f"任务{status_map.get(task.status, task.status)}: {getattr(task, 'error_message', '') or '无详细信息'}",
+                status_code=-1,
                 task_id=task.id,
                 status=task.status,
                 cost=task.cost,
             )
         else:
             return _tool_success({
+                "status_code": 1,
                 "task_id": task.id,
                 "status": task.status,
                 "status_text": status_map.get(task.status, task.status),
