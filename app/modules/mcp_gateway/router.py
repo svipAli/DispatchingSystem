@@ -386,7 +386,12 @@ async def _query_task(session: MCPSession, task_id: int) -> dict:
                 "cost": task.cost,
             })
         elif task.status in ("failed", "cancelled"):
-            return _tool_error(f"任务{status_map.get(task.status, task.status)}: {getattr(task, 'error_message', '') or '无详细信息'}")
+            return _tool_error(
+                f"任务{status_map.get(task.status, task.status)}: {getattr(task, 'error_message', '') or '无详细信息'}",
+                task_id=task.id,
+                status=task.status,
+                cost=task.cost,
+            )
         else:
             return _tool_success({
                 "task_id": task.id,
