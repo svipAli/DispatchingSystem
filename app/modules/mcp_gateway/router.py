@@ -22,6 +22,9 @@ class _Encoder(json.JSONEncoder):
 
 def _json_dumps(data):
     return json.dumps(data, ensure_ascii=False, cls=_Encoder)
+
+def _json(msg):
+    return json.dumps(msg, ensure_ascii=False)
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_db
@@ -95,7 +98,7 @@ async def mcp_sse(request: Request):
             while True:
                 try:
                     msg = await asyncio.wait_for(sess.queue.get(), timeout=30)
-                    yield f"event: message\ndata: {_json_dumps(msg, ensure_ascii=False)}\n\n"
+                    yield f"event: message\ndata: {_json(msg)}\n\n"
                 except asyncio.TimeoutError:
                     yield ": heartbeat\n\n"
         except (asyncio.CancelledError, ConnectionError):
