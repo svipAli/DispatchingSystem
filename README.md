@@ -18,31 +18,17 @@
 ## 快速开始
 
 ```bash
-# 1. 克隆仓库
+# 克隆 + 一键部署
 git clone https://github.com/svipAli/DispatchingSystem.git
 cd DispatchingSystem
-
-# 2. 配置环境变量
-cp .env.example .env
-vim .env  # 修改数据库连接、Redis 地址、JWT 密钥
-
-# 3. 安装依赖
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-
-# 4. 数据库迁移
-alembic upgrade head
-
-# 5. 启动
-uvicorn app.main:app --host 0.0.0.0 --port 8000
+bash setup.sh
 ```
 
-或使用 Docker：
+部署完成后访问 `http://localhost:8000`，管理员 `admin` / `Admin123456`。
 
-```bash
-docker compose up -d
-```
+> 部署前可编辑 `.env` 修改数据库连接和 JWT 密钥。
+
+## 手动部署
 
 ## 功能模块
 
