@@ -120,5 +120,35 @@
         {% block content %}{% endblock %}
     </main>
 
+    {% if user %}
+    <footer class="text-center py-3 text-xs text-gray-400">
+        <a href="#" onclick="showContact();return false" class="hover:text-indigo-500">联系客服</a>
+    </footer>
+    <div id="contact-modal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 hidden" onclick="if(event.target===this)this.classList.add('hidden')">
+        <div class="bg-white rounded-xl p-6 w-full max-w-lg mx-4 max-h-[70vh] overflow-y-auto">
+            <h3 class="text-lg font-bold mb-3">联系客服</h3>
+            <div id="contact-content" class="text-sm text-gray-600">加载中...</div>
+            <div class="text-right mt-4">
+                <button onclick="document.getElementById('contact-modal').classList.add('hidden')" class="px-4 py-2 text-sm bg-gray-100 rounded-lg hover:bg-gray-200">关闭</button>
+            </div>
+        </div>
+    </div>
+    <script>
+    function showContact() {
+        var modal = document.getElementById('contact-modal');
+        modal.classList.remove('hidden');
+        App.get('/api/v1/system-configs?page_size=100').then(function(d) {
+            var html = '';
+            if (d.data && d.data.items) {
+                d.data.items.forEach(function(c) {
+                    if (c.key === 'contact_service' && c.value) html = c.value;
+                });
+            }
+            document.getElementById('contact-content').innerHTML = html || '<p>暂未设置客服信息</p>';
+        });
+    }
+    </script>
+    {% endif %}
+
     </body>
 </html>

@@ -24,8 +24,8 @@
             </div>
         </div>
         <div class="mt-4">
-            <label class="block text-sm font-medium text-gray-700 mb-1">联系客服说明（支持 HTML）</label>
-            <textarea id="contact_service" rows="4" class="w-full px-3 py-2 border rounded-lg" placeholder="<p>客服邮箱：support@example.com</p><p>工作时间：周一至周五 9:00-18:00</p>"></textarea>
+            <label class="block text-sm font-medium text-gray-700 mb-1">联系客服说明（富文本，支持 HTML）</label>
+            <div id="contact-editor" style="height:150px"></div>
         </div>
     </div>
 
@@ -136,13 +136,20 @@ function previewLogo() {
 
 // 字段名到 input id 的映射
 var fieldMap = {
-    'site_title': 'site_title', 'site_logo': 'site_logo', 'contact_service': 'contact_service',
+    'site_title': 'site_title', 'site_logo': 'site_logo',
     'smtp_host': 'smtp_host', 'smtp_port': 'smtp_port', 'smtp_user': 'smtp_user',
     'smtp_password': 'smtp_password', 'smtp_from_name': 'smtp_from_name',
     'cos_secret_id': 'cos_secret_id', 'cos_secret_key': 'cos_secret_key',
     'cos_bucket': 'cos_bucket', 'cos_region': 'cos_region', 'cos_cdn_domain': 'cos_cdn_domain',
     'ai_api_url': 'ai_api_url', 'ai_api_key': 'ai_api_key', 'ai_model': 'ai_model'
 };
+
+var contactQuill = null;
+
+// 初始化 Quill
+setTimeout(function() {
+    contactQuill = new Quill('#contact-editor', { theme: 'snow', placeholder: '客服联系方式...' });
+}, 200);
 
 // 加载已有配置预填表单
 App.get('/api/v1/system-configs?page_size=100').then(function(data) {
@@ -152,6 +159,9 @@ App.get('/api/v1/system-configs?page_size=100').then(function(data) {
             if (inputId) {
                 var el = document.getElementById(inputId);
                 if (el) el.value = c.value;
+            }
+            if (c.key === 'contact_service' && contactQuill) {
+                contactQuill.root.innerHTML = c.value || '';
             }
         });
         previewLogo();
@@ -166,6 +176,13 @@ function saveSettings() {
         var value = document.getElementById(fieldMap[key]).value;
         var group = key.startsWith('smtp_') ? 'email' : key.startsWith('cos_') ? 'storage' : key.startsWith('ai_') ? 'ai' : 'site';
         promises.push(App.post('/api/v1/system-configs/upsert', {key: key, value: value, group: group}));
+    }
+    // 保存 Quill 富文本
+    if (contactQuill) {
+        var cs = contactQuill.root.innerHTML.trim();
+        if (cs && cs !== '<p><br></p>') {
+            promises.push(App.post('/api/v1/system-configs/upsert', {key: 'contact_service', value: cs, group: 'site'}));
+        }
     }
     Promise.all(promises).then(function() {
         document.getElementById('save-result').innerHTML = '<div class="bg-green-50 border border-green-200 text-green-700 rounded-lg px-4 py-3">全部设置已保存</div>';
