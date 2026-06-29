@@ -30,15 +30,6 @@ if [ ! -f .env ]; then
     read -p "编辑完成后按 Enter 继续部署，Ctrl+C 取消..." _
 fi
 
-# 自动生成 JWT 密钥
-if ! grep -q "JWT_SECRET_KEY=change-me" .env 2>/dev/null; then
-    true  # 已修改，跳过
-else
-    NEW_KEY=$(openssl rand -hex 32)
-    sed -i "s/JWT_SECRET_KEY=.*/JWT_SECRET_KEY=$NEW_KEY/" .env
-    echo "已自动生成 JWT_SECRET_KEY"
-fi
-
 mkdir -p app/static/upload
 
 $COMPOSE up -d --build
