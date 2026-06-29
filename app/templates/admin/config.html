@@ -148,7 +148,30 @@ var contactQuill = null;
 
 // 初始化 Quill
 setTimeout(function() {
-    contactQuill = new Quill('#contact-editor', { theme: 'snow', placeholder: '客服联系方式...' });
+    contactQuill = new Quill('#contact-editor', {
+        theme: 'snow',
+        modules: {
+            toolbar: {
+                container: [['bold','italic','underline'],['link','image'],['blockquote'],[{list:'ordered'},{list:'bullet'}],['clean']],
+                handlers: {
+                    image: function() {
+                        var input = document.createElement('input');
+                        input.type = 'file'; input.accept = 'image/*';
+                        input.onchange = function() {
+                            var file = input.files[0];
+                            if (!file) return;
+                            App.upload(file, function(url) {
+                                var range = contactQuill.getSelection(true);
+                                contactQuill.insertEmbed(range.index, 'image', url);
+                            });
+                        };
+                        input.click();
+                    }
+                }
+            }
+        },
+        placeholder: '客服联系方式...'
+    });
 }, 200);
 
 // 加载已有配置预填表单
